@@ -223,7 +223,7 @@ Fehler:
 - Provider-Chatter und Server-Log lesen.
 - PayPal: Live-Credentials, nicht Sandbox.
 - ZEN: Transfers-Key, nicht Terminal-Key; nur SETTLED kommt an.
-- GoCardless: Consent abgelaufen → Identifier neu wählen.
+- GoCardless Payments: Access Token, Webhook, Clearing-Journal — nicht BAD.
 
 Wenn die 7 Tage sauber sind: denselben Provider für 90 Tage pullen.
 Danach den Cron lassen (`Pull Online Bank Statements`, stündlich).
@@ -292,6 +292,48 @@ dann Gebühren, dann den Rest gegen Rechnungen.
 
 ---
 
+## Schritt 10b — Rechnungen über das GoCardless-Clearing bezahlen
+
+Ja. Das Clearing-Konto **ist** der Zahlungseingang auf der Rechnung.
+Die Hausbank kommt erst später (Payout) und darf die Rechnung nicht
+noch einmal bezahlen.
+
+Zwei Wege, nimm **einen** pro Einzug, nicht beide:
+
+### Weg A — Auszug gegen Rechnung (empfohlen)
+
+1. Rechnung bleibt offen, bis GoCardless `confirmed` ist.
+2. Im Journal `GC` steht die Zeile `[confirmed] …` mit +Betrag.
+3. Dashboard → GC → **Abstimmen** → Zeile der offenen Rechnung zuordnen.
+4. Rechnung = bezahlt, Clearing = belastet. Ein Buchungssatz.
+
+Schlägt der Einzug vorher fehl, ist die Zeile 0 — die Rechnung bleibt
+offen. Nichts zurückdrehen.
+
+### Weg B — „Zahlung registrieren“ auf der Rechnung
+
+1. Rechnung → Zahlung registrieren → Journal **GC**.
+2. Am Journal GC: Liquiditätskonto **und** Ausstehende Eingänge = dasselbe
+   Clearing-Konto. Sonst hängt die Zahlung auf einem dritten Konto.
+3. Buchung: Soll Clearing, Haben Forderung.
+4. Danach die GC-Auszugszeile (`confirmed`) gegen **diese Zahlung**
+   abstimmen, nicht nochmal gegen die Rechnung.
+
+Nur registrieren, wenn der Einzug wirklich `confirmed` ist. Bei
+`submitted` noch nicht — sonst musst du die Zahlung stornieren, sobald
+GoCardless `failed` setzt.
+
+### Was du nicht tun darfst
+
+- Rechnung über GC bezahlen **und** dieselbe Rechnung über die Hausbank
+  nochmal bezahlen (Payout ist nur Geldtransit).
+- Zahlung schon bei Mandat/submitted registrieren und den Fail ignorieren.
+- n8n zusätzlich eine Zahlung auf die Rechnung schreiben.
+
+Payout: nur GC −Netto gegen Bank +Netto. Die Rechnung ist da schon zu.
+
+---
+
 ## Schritt 11 — Parallelbetrieb zur Cloud / zu n8n
 
 Solange die Community-Instanz noch nicht die führende Buchhaltung ist:
@@ -321,6 +363,8 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 - [ ] ZEN: nur SETTLED, IBAN/UUID stimmt, Vorzeichen richtig
 - [ ] GoCardless: Einzug sichtbar, Fail ändert dieselbe Zeile auf 0,
       Payout + Gebühr setzen Clearing auf 0
+- [ ] Rechnung nur über GC-Clearing bezahlt, Payout nicht nochmal gegen
+      dieselbe Rechnung
 - [ ] Bank: CAMT/CSV oder anderer Bankfeed, nicht GoCardless BAD
 - [ ] Jeeves: eine CSV, Pending weg, Re-Import ohne Duplikate
 - [ ] PayPal-Auszahlung erscheint auf PayPal **und** Bank und geht über Geldtransit

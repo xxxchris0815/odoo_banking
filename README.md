@@ -109,6 +109,11 @@ Du ziehst Lastschriften ein. Dafür ein eigenes Journal `GC EUR` auf einem
 Clearing steht wieder auf 0. Die Gutschrift auf der Hausbank kommt aus dem
 Bankfeed und wird über Geldtransit gegen den Payout abgestimmt.
 
+Rechnungen zahlst du gegen dieses Clearing (Auszug `confirmed` → Rechnung,
+oder Zahlung registrieren mit Journal GC). Den Payout nicht noch einmal
+als Zahlungseingang auf dieselbe Rechnung buchen. Details: SETUP.md
+Schritt 10b.
+
 Webhook `/gocardless/payments/webhook` zieht Fehlschläge sofort nach.
 Der Cron holt zusätzlich 90 Tage zurück, falls ein Webhook verloren ging.
 
