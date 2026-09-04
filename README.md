@@ -4,8 +4,9 @@ Sauberer Ersatz für die Odoo-Cloud-Kontenkopplung plus n8n-Abgleich.
 Ziel: jede Bewegung landet als `account.bank.statement.line` in der
 Community-Buchhaltung und wird dort abgestimmt — nicht in n8n.
 
-**Zum Einrichten:** [SETUP.md](SETUP.md) — zwölf Schritte von den Zugangsdaten
-bis zur Abnahme, in dieser Reihenfolge.
+**Installation auf dem Server:** [INSTALL.md](INSTALL.md)
+
+**Danach einrichten:** [SETUP.md](SETUP.md) — Journals, Keys, erster Pull.
 
 ## Empfehlung in einem Satz
 

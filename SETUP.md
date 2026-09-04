@@ -54,7 +54,8 @@ Nichts in Git oder in n8n-Notes speichern. Nur ins Odoo-Provider-Formular.
 
 ## Schritt 2 — Module auf den Server legen
 
-Auf dem Odoo-Host, neben deiner Odoo-Installation (Pfade anpassen):
+Die Varianten (Debian, Docker, Odoo.sh) stehen in [INSTALL.md](INSTALL.md).
+Kurz auf dem Host:
 
 ```bash
 mkdir -p /opt/odoo/extra
@@ -65,16 +66,9 @@ git clone --branch 19.0 --depth 1 https://github.com/OCA/bank-statement-import
 git clone --branch cursor/community-banking-stack-f606 https://github.com/xxxchris0815/odoo_banking
 ```
 
-In der Odoo-Konfiguration (`odoo.conf` oder Docker `ADDONS_PATH`):
-
-```
-addons_path = /opt/odoo/odoo/addons,/opt/odoo/extra/account-reconcile,/opt/odoo/extra/bank-statement-import,/opt/odoo/extra/odoo_banking/addons
-```
-
-Odoo neu starten, danach Apps → *Apps aktualisieren*.
-
-Wenn du **kein** GoCardless-BAD nutzt, ist das in Ordnung: das Meta-Modul
-hängt nicht daran.
+`addons_path` um diese drei Einträge **ergänzen** — bei uns das
+Unterverzeichnis `odoo_banking/addons`. Odoo neu starten, Apps-Liste
+aktualisieren.
 
 ---
 
