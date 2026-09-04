@@ -206,7 +206,7 @@ Zweite Währung = zweites Journal (`PPUSD`, `ZENUSD`, …).
 
 1. Provider-Formular → **Pull Online Bank Statement** → letzte 7 Tage.
 2. Oder einen Sandbox-Einzug auslösen: im Journal `GC` erscheint
-   `[submitted]` / 0, nach Confirm dieselbe Zeile mit +.
+   `[submitted] Kundenname — Referenz` / 0, nach Confirm dieselbe Zeile mit +.
 
 Payouts nicht per n8n auf dieses Journal schreiben. Die Hausbank bekommt
 den Eingang aus ihrem eigenen Auszug.
@@ -294,8 +294,9 @@ Mindestens diese drei:
 - Für PayPal→Bank, ZEN→Bank, Jeeves-Settlement, **GoCardless-Payout→Bank**
   je eine Regel oder eine gemeinsame mit Betragsmatch
 
-GoCardless-Payout: Zeile `[payout paid] POxxx` (−Netto) gegen den
-Bankeingang (+Netto). Gebührenzeile gegen den Gebührenaufwand.
+GoCardless-Payout: Zeile `[payout paid] Bank transfer POxxx` (−Netto)
+gegen den Bankeingang (+Netto). Gebührenzeile gegen den Gebührenaufwand.
+Nicht gegen Kundenrechnungen — Kundendaten stehen nur auf den `PM…`-Zeilen.
 
 ### Jeeves-Kartenumsatz (optional)
 
@@ -318,9 +319,17 @@ Zwei Wege, nimm **einen** pro Einzug, nicht beide:
 ### Weg A — Auszug gegen Rechnung (empfohlen)
 
 1. Rechnung bleibt offen, bis GoCardless `confirmed` ist.
-2. Im Journal `GC` steht die Zeile `[confirmed] …` mit +Betrag.
-3. Dashboard → GC → **Abstimmen** → Zeile der offenen Rechnung zuordnen.
+2. Im Journal `GC` steht die **Einzugszeile**
+   `[confirmed] Kundenname — INV-…` (`PMxxx`) mit +Betrag, Partner und
+   E-Mail/IBAN in der Notiz. Das ist die Zeile gegen die Rechnung.
+3. Dashboard → GC → **Abstimmen** → offene Rechnung desselben Partners.
+   Odoo matcht über Partner, Referenz und Betrag.
 4. Rechnung = bezahlt, Clearing = belastet. Ein Buchungssatz.
+
+Die Zeile `[payout paid] Bank transfer POxxx` ist die **Sammelauszahlung
+an die Hausbank**. Die hat keine Kundennamen und darf **nicht** gegen
+eine Rechnung. Die stimmt ihr gegen den Bankeingang (Geldtransit) plus
+die Gebührenzeile.
 
 Schlägt der Einzug vorher fehl, ist die Zeile 0 — die Rechnung bleibt
 offen. Nichts zurückdrehen.

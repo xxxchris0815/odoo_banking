@@ -9,6 +9,7 @@ from account_statement_import_online_gocardless_payments.lib.gocardless_payments
     GoCardlessPaymentsClient,
     _as_iso,
     clearing_balance,
+    format_customer_name,
     payment_amount,
     statement_line_from_payment,
     statement_line_from_refund,
@@ -72,6 +73,34 @@ def test_failed_and_charged_back_clear_the_amount():
     failed = statement_line_from_payment(_payment(status="failed"))
     assert failed["payment_ref"] == "[failed] INV-1042"
     assert failed["unique_import_id"] == "gc:pay:PM123"
+
+
+def test_payment_line_carries_customer_for_reconciliation():
+    line = statement_line_from_payment(
+        _payment(status="confirmed"),
+        customer_name="Ada Lovelace (Expect Magic)",
+        customer_email="ada@example.com",
+        customer_company="Expect Magic",
+        customer_id="CU1",
+        account_number="DE89370400440532013000",
+    )
+    assert line["partner_name"] == "Ada Lovelace (Expect Magic)"
+    assert line["partner_email"] == "ada@example.com"
+    assert line["account_number"] == "DE89370400440532013000"
+    assert line["payment_ref"] == "[confirmed] Ada Lovelace (Expect Magic) — INV-1042"
+    assert "email=ada@example.com" in line["narration"]
+    assert "customer=CU1" in line["narration"]
+
+
+def test_format_customer_name_prefers_person_and_company():
+    assert (
+        format_customer_name(
+            {"given_name": "Ada", "family_name": "Lovelace", "company_name": "Acme"}
+        )
+        == "Ada Lovelace (Acme)"
+    )
+    assert format_customer_name({"company_name": "Acme GmbH"}) == "Acme GmbH"
+    assert format_customer_name({}) is None
 
 
 def test_payout_and_fees_clear_confirmed_collections():
@@ -183,16 +212,95 @@ def test_client_paginates_payments_and_builds_lines():
     lines = client.obtain_statement_lines(datetime(2026, 7, 1), datetime(2026, 7, 31))
     assert [line["unique_import_id"] for line in lines] == ["gc:pay:PM123", "gc:pay:PM999"]
     assert lines[0]["partner_name"] == "Ada Lovelace"
+    assert lines[0]["payment_ref"] == "[confirmed] Ada Lovelace — INV-1042"
     assert lines[0]["amount"] == 100.0
     assert lines[1]["amount"] == 0.0
+    assert any("include=" in url and "payments" in url for url in calls)
     assert any("created_at" in url and "gte" in url.replace("%5B", "[").replace("%5D", "]") or "created_at" in url for url in calls)
+
+
+def test_customer_resolved_via_mandate_when_payment_has_no_customer_link():
+    """Live GoCardless payments only link the mandate, not the customer."""
+    payment = _payment(status="confirmed", links={"mandate": "MD1"})
+
+    def http_get(url, headers):
+        if url.startswith(f"{GC_API_BASE}/payments"):
+            return 200, {"payments": [payment], "meta": {"cursors": {}}}
+        if url.startswith(f"{GC_API_BASE}/payouts"):
+            return 200, {"payouts": [], "meta": {"cursors": {}}}
+        if url.startswith(f"{GC_API_BASE}/refunds"):
+            return 200, {"refunds": [], "meta": {"cursors": {}}}
+        if "mandates/MD1" in url:
+            return 200, {
+                "mandates": {
+                    "id": "MD1",
+                    "links": {"customer": "CU9", "customer_bank_account": "BA1"},
+                }
+            }
+        if "customers/CU9" in url:
+            return 200, {
+                "customers": {
+                    "given_name": "Test",
+                    "family_name": "Client",
+                    "company_name": "Test Client",
+                    "email": "test.client@example.com",
+                }
+            }
+        if "customer_bank_accounts/BA1" in url:
+            return 200, {
+                "customer_bank_accounts": {"iban": "DE89370400440532013000"}
+            }
+        return 404, url
+
+    client = GoCardlessPaymentsClient("tok", http_get=http_get, status_lookback_days=1)
+    lines = client.obtain_statement_lines(datetime(2026, 7, 1), datetime(2026, 7, 31))
+    assert lines[0]["partner_name"] == "Test Client"
+    assert lines[0]["partner_email"] == "test.client@example.com"
+    assert lines[0]["account_number"] == "DE89370400440532013000"
+    assert lines[0]["payment_ref"] == "[confirmed] Test Client — INV-1042"
+
+
+def test_included_linked_customers_avoid_extra_gets():
+    payment = _payment(status="confirmed", links={"mandate": "MD1"})
+    calls = []
+
+    def http_get(url, headers):
+        calls.append(url)
+        if url.startswith(f"{GC_API_BASE}/payments"):
+            return 200, {
+                "payments": [payment],
+                "linked": {
+                    "customers": [
+                        {
+                            "id": "CU1",
+                            "given_name": "Ada",
+                            "family_name": "Lovelace",
+                            "email": "ada@example.com",
+                        }
+                    ],
+                    "mandates": [{"id": "MD1", "links": {"customer": "CU1"}}],
+                },
+                "meta": {"cursors": {}},
+            }
+        if url.startswith(f"{GC_API_BASE}/payouts"):
+            return 200, {"payouts": [], "meta": {"cursors": {}}}
+        if url.startswith(f"{GC_API_BASE}/refunds"):
+            return 200, {"refunds": [], "meta": {"cursors": {}}}
+        return 404, url
+
+    client = GoCardlessPaymentsClient("tok", http_get=http_get, status_lookback_days=1)
+    lines = client.obtain_statement_lines(datetime(2026, 7, 1), datetime(2026, 7, 31))
+    assert lines[0]["partner_name"] == "Ada Lovelace"
+    assert lines[0]["partner_email"] == "ada@example.com"
+    assert not any("/customers/" in url for url in calls)
+    assert not any("/mandates/" in url for url in calls)
 
 
 def test_client_event_failed_payment():
     def http_get(url, headers):
-        if url.endswith("payments/PM123"):
+        if "payments/PM123" in url:
             return 200, {"payments": _payment(status="failed")}
-        if url.endswith("customers/CU1"):
+        if "customers/CU1" in url:
             return 200, {"customers": {"company_name": "Acme GmbH"}}
         return 404, "no"
 
@@ -206,7 +314,7 @@ def test_client_event_failed_payment():
         }
     )
     assert lines[0]["amount"] == 0.0
-    assert lines[0]["payment_ref"] == "[failed] INV-1042"
+    assert lines[0]["payment_ref"] == "[failed] Acme GmbH — INV-1042"
     assert "insufficient_funds" in lines[0]["narration"]
     assert lines[0]["partner_name"] == "Acme GmbH"
 

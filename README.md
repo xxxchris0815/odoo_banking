@@ -110,9 +110,10 @@ Du ziehst Lastschriften ein. Dafür ein eigenes Journal `GC EUR` auf einem
 Clearing steht wieder auf 0. Die Gutschrift auf der Hausbank kommt aus dem
 Bankfeed und wird über Geldtransit gegen den Payout abgestimmt.
 
-Rechnungen zahlst du gegen dieses Clearing (Auszug `confirmed` → Rechnung,
-oder Zahlung registrieren mit Journal GC). Den Payout nicht noch einmal
-als Zahlungseingang auf dieselbe Rechnung buchen. Details: SETUP.md
+Rechnungen zahlst du gegen die **Einzugszeile** (`[confirmed] Kundenname — Referenz`,
+Payment-ID `PMxxx`), nicht gegen die Sammelauszahlung (`[payout paid] Bank transfer POxxx`).
+Der Provider zieht Name, Firma, E-Mail und IBAN über das Mandat und setzt
+den Odoo-Partner, wenn E-Mail oder IBAN eindeutig ist. Details: SETUP.md
 Schritt 10b.
 
 Webhook `/gocardless/payments/webhook` zieht Fehlschläge sofort nach.

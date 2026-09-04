@@ -18,6 +18,7 @@ GC_SANDBOX_API_BASE = "https://api-sandbox.gocardless.com"
 GC_API_VERSION = "2015-07-06"
 DEFAULT_PAGE_LIMIT = 100
 STATUS_LOOKBACK_DAYS = 90
+PAYMENT_INCLUDE = "customer,mandate,customer_bank_account"
 
 COLLECTED_STATUSES = frozenset({"confirmed", "paid_out"})
 PAYOUT_BOOK_STATUSES = frozenset({"pending", "paid"})
@@ -102,10 +103,36 @@ def _label(*parts: Any) -> str:
     return " ".join(str(part) for part in parts if part)
 
 
+def format_customer_name(customer: dict[str, Any] | None) -> str | None:
+    if not customer:
+        return None
+    person = " ".join(
+        part
+        for part in (customer.get("given_name"), customer.get("family_name"))
+        if part
+    ).strip()
+    company = (customer.get("company_name") or "").strip()
+    if person and company and person.casefold() != company.casefold():
+        return f"{person} ({company})"
+    return person or company or None
+
+
+def _payment_ref(status: str, reference: str, customer_name: str | None = None) -> str:
+    if customer_name and reference and customer_name not in reference:
+        return f"[{status}] {customer_name} — {reference}"
+    if customer_name:
+        return f"[{status}] {customer_name}"
+    return f"[{status}] {reference}"
+
+
 def statement_line_from_payment(
     payment: dict[str, Any],
     *,
     customer_name: str | None = None,
+    customer_email: str | None = None,
+    customer_company: str | None = None,
+    customer_id: str | None = None,
+    account_number: str | None = None,
     event_detail: str | None = None,
 ) -> dict[str, Any]:
     status = payment.get("status") or "unknown"
@@ -118,19 +145,26 @@ def statement_line_from_payment(
     if when is None:
         raise ValueError(f"GoCardless payment {pay_id} has no date")
     reference = payment.get("reference") or payment.get("description") or pay_id
+    mandate_id = ((payment.get("links") or {}).get("mandate")) or None
     narration = _label(
         f"status={status}",
         payment.get("description"),
-        f"mandate={((payment.get('links') or {}).get('mandate'))}",
+        f"customer={customer_id}" if customer_id else None,
+        f"email={customer_email}" if customer_email else None,
+        f"mandate={mandate_id}" if mandate_id else None,
         event_detail,
     )
     return {
         "date": when,
-        "payment_ref": f"[{status}] {reference}",
+        "payment_ref": _payment_ref(status, reference, customer_name),
         "ref": pay_id,
         "unique_import_id": payment_unique_id(pay_id),
         "amount": payment_amount(payment),
         "partner_name": customer_name or False,
+        "partner_email": customer_email or False,
+        "partner_company": customer_company or False,
+        "gc_customer_id": customer_id or False,
+        "account_number": account_number or False,
         "narration": narration or False,
         "transaction_type": status,
         "currency_code": payment.get("currency") or False,
@@ -153,7 +187,7 @@ def statement_lines_from_payout(payout: dict[str, Any]) -> list[dict[str, Any]]:
     lines = [
         {
             "date": when,
-            "payment_ref": f"[payout {status}] {payout_id}",
+            "payment_ref": f"[payout {status}] Bank transfer {payout_id}",
             "ref": payout_id,
             "unique_import_id": payout_unique_id(payout_id),
             "amount": -amount if book else 0.0,
@@ -161,7 +195,7 @@ def statement_lines_from_payout(payout: dict[str, Any]) -> list[dict[str, Any]]:
             "narration": _label(
                 f"status={status}",
                 f"reference={payout.get('reference')}",
-                "clearing to bank",
+                "Sammelauszahlung an die Hausbank — nicht gegen eine Rechnung abstimmen.",
             ),
             "transaction_type": f"payout_{status}",
             "currency_code": currency,
@@ -185,7 +219,15 @@ def statement_lines_from_payout(payout: dict[str, Any]) -> list[dict[str, Any]]:
     return lines
 
 
-def statement_line_from_refund(refund: dict[str, Any]) -> dict[str, Any]:
+def statement_line_from_refund(
+    refund: dict[str, Any],
+    *,
+    customer_name: str | None = None,
+    customer_email: str | None = None,
+    customer_company: str | None = None,
+    customer_id: str | None = None,
+    account_number: str | None = None,
+) -> dict[str, Any]:
     refund_id = refund.get("id") or ""
     if not refund_id:
         raise ValueError("GoCardless refund is missing id")
@@ -196,13 +238,18 @@ def statement_line_from_refund(refund: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"GoCardless refund {refund_id} has no date")
     major = abs(minor_to_major(refund.get("amount") or 0, currency))
     amount = -major if status in REFUND_BOOK_STATUSES else 0.0
+    reference = refund.get("reference") or refund_id
     return {
         "date": when,
-        "payment_ref": f"[refund {status}] {refund.get('reference') or refund_id}",
+        "payment_ref": _payment_ref(f"refund {status}", reference, customer_name),
         "ref": refund_id,
         "unique_import_id": refund_unique_id(refund_id),
         "amount": amount,
-        "partner_name": False,
+        "partner_name": customer_name or False,
+        "partner_email": customer_email or False,
+        "partner_company": customer_company or False,
+        "gc_customer_id": customer_id or False,
+        "account_number": account_number or False,
         "narration": refund.get("reason") or False,
         "transaction_type": f"refund_{status}",
         "currency_code": currency,
@@ -231,6 +278,8 @@ class GoCardlessPaymentsClient:
         self.status_lookback_days = status_lookback_days
         self._http_get = http_get
         self._customers: dict[str, dict[str, Any]] = {}
+        self._mandates: dict[str, dict[str, Any]] = {}
+        self._bank_accounts: dict[str, dict[str, Any]] = {}
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -256,7 +305,20 @@ class GoCardlessPaymentsClient:
             raise GoCardlessHTTPError(status, body)
         if not isinstance(payload, dict):
             raise GoCardlessHTTPError(status, f"Unexpected payload: {payload!r}")
+        self._ingest_linked(payload)
         return payload
+
+    def _ingest_linked(self, payload: dict[str, Any]) -> None:
+        linked = payload.get("linked") or {}
+        for customer in linked.get("customers") or []:
+            if customer.get("id"):
+                self._customers[customer["id"]] = customer
+        for mandate in linked.get("mandates") or []:
+            if mandate.get("id"):
+                self._mandates[mandate["id"]] = mandate
+        for bank in linked.get("customer_bank_accounts") or []:
+            if bank.get("id"):
+                self._bank_accounts[bank["id"]] = bank
 
     def _paginate(self, path: str, key: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         collected: list[dict[str, Any]] = []
@@ -277,29 +339,91 @@ class GoCardlessPaymentsClient:
         return collected
 
     def get_payment(self, payment_id: str) -> dict[str, Any]:
-        return (self._get(f"payments/{payment_id}") or {}).get("payments") or {}
+        payload = self._get(f"payments/{payment_id}", {"include": PAYMENT_INCLUDE})
+        return payload.get("payments") or {}
 
     def get_payout(self, payout_id: str) -> dict[str, Any]:
         return (self._get(f"payouts/{payout_id}") or {}).get("payouts") or {}
 
+    def get_refund(self, refund_id: str) -> dict[str, Any]:
+        payload = self._get(
+            f"refunds/{refund_id}", {"include": "customer,mandate,payment"}
+        )
+        return payload.get("refunds") or {}
+
     def get_customer(self, customer_id: str) -> dict[str, Any]:
+        if not customer_id:
+            return {}
         if customer_id in self._customers:
             return self._customers[customer_id]
         customer = (self._get(f"customers/{customer_id}") or {}).get("customers") or {}
         self._customers[customer_id] = customer
         return customer
 
-    def _customer_name(self, resource: dict[str, Any]) -> str | None:
-        customer_id = ((resource.get("links") or {}).get("customer")) or None
-        if not customer_id:
-            return None
-        customer = self.get_customer(customer_id)
-        name = " ".join(
-            part
-            for part in (customer.get("given_name"), customer.get("family_name"))
-            if part
-        ).strip()
-        return name or customer.get("company_name") or None
+    def get_mandate(self, mandate_id: str) -> dict[str, Any]:
+        if not mandate_id:
+            return {}
+        if mandate_id in self._mandates:
+            return self._mandates[mandate_id]
+        mandate = (self._get(f"mandates/{mandate_id}") or {}).get("mandates") or {}
+        self._mandates[mandate_id] = mandate
+        return mandate
+
+    def get_bank_account(self, bank_id: str) -> dict[str, Any]:
+        if not bank_id:
+            return {}
+        if bank_id in self._bank_accounts:
+            return self._bank_accounts[bank_id]
+        bank = (
+            self._get(f"customer_bank_accounts/{bank_id}") or {}
+        ).get("customer_bank_accounts") or {}
+        self._bank_accounts[bank_id] = bank
+        return bank
+
+    def _party_for_resource(self, resource: dict[str, Any]) -> dict[str, Any]:
+        """Customer lives on the mandate; payments rarely have links.customer."""
+        links = resource.get("links") or {}
+        customer_id = links.get("customer")
+        mandate_id = links.get("mandate")
+        bank_id = links.get("customer_bank_account")
+        mandate: dict[str, Any] = {}
+        if mandate_id and not customer_id:
+            mandate = self.get_mandate(mandate_id)
+        elif mandate_id:
+            mandate = self._mandates.get(mandate_id) or {}
+        if mandate:
+            mandate_links = mandate.get("links") or {}
+            customer_id = customer_id or mandate_links.get("customer")
+            bank_id = bank_id or mandate_links.get("customer_bank_account")
+        customer = self.get_customer(customer_id) if customer_id else {}
+        bank = self.get_bank_account(bank_id) if bank_id else {}
+        return {
+            "customer_name": format_customer_name(customer),
+            "customer_email": (customer.get("email") or None) if customer else None,
+            "customer_company": (customer.get("company_name") or None)
+            if customer
+            else None,
+            "customer_id": customer_id,
+            "account_number": (bank.get("iban") or bank.get("account_number") or None)
+            if bank
+            else None,
+        }
+
+    def _line_from_payment(
+        self, payment: dict[str, Any], *, event_detail: str | None = None
+    ) -> dict[str, Any]:
+        party = self._party_for_resource(payment)
+        return statement_line_from_payment(
+            payment, event_detail=event_detail, **party
+        )
+
+    def _line_from_refund(self, refund: dict[str, Any]) -> dict[str, Any]:
+        party = self._party_for_resource(refund)
+        if not party.get("customer_id") and ((refund.get("links") or {}).get("payment")):
+            payment = self.get_payment(refund["links"]["payment"])
+            if payment:
+                party = self._party_for_resource(payment)
+        return statement_line_from_refund(refund, **party)
 
     def iter_payments(self, date_since: datetime | date, date_until: datetime | date) -> list[dict[str, Any]]:
         lookback_start = (
@@ -314,6 +438,7 @@ class GoCardlessPaymentsClient:
             {
                 "created_at[gte]": _as_iso(lookback_start),
                 "created_at[lte]": _as_iso(date_until),
+                "include": PAYMENT_INCLUDE,
             },
         )
 
@@ -344,15 +469,11 @@ class GoCardlessPaymentsClient:
     ) -> list[dict[str, Any]]:
         lines: list[dict[str, Any]] = []
         for payment in self.iter_payments(date_since, date_until):
-            lines.append(
-                statement_line_from_payment(
-                    payment, customer_name=self._customer_name(payment)
-                )
-            )
+            lines.append(self._line_from_payment(payment))
         for payout in self.iter_payouts(date_since, date_until):
             lines.extend(statement_lines_from_payout(payout))
         for refund in self.iter_refunds(date_since, date_until):
-            lines.append(statement_line_from_refund(refund))
+            lines.append(self._line_from_refund(refund))
         return lines
 
     def lines_for_event(self, event: dict[str, Any]) -> list[dict[str, Any]]:
@@ -364,17 +485,11 @@ class GoCardlessPaymentsClient:
             payment = self.get_payment(links["payment"])
             if not payment:
                 return []
-            return [
-                statement_line_from_payment(
-                    payment,
-                    customer_name=self._customer_name(payment),
-                    event_detail=detail_text,
-                )
-            ]
+            return [self._line_from_payment(payment, event_detail=detail_text)]
         if resource_type == "payouts" and links.get("payout"):
             payout = self.get_payout(links["payout"])
             return statement_lines_from_payout(payout) if payout else []
         if resource_type == "refunds" and links.get("refund"):
-            refund = (self._get(f"refunds/{links['refund']}") or {}).get("refunds") or {}
-            return [statement_line_from_refund(refund)] if refund else []
+            refund = self.get_refund(links["refund"])
+            return [self._line_from_refund(refund)] if refund else []
         return []

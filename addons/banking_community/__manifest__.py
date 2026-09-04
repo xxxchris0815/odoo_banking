@@ -1,6 +1,6 @@
 {
     "name": "Community Banking Stack",
-    "version": "19.0.1.2.0",
+    "version": "19.0.1.3.0",
     "category": "Accounting",
     "summary": "Glue module for Odoo 19 Community bank feeds (PayPal, GoCardless, ZEN.COM, Jeeves)",
     "author": "Expect Magic",

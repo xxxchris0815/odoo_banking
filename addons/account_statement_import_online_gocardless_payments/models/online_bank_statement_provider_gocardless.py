@@ -73,6 +73,7 @@ class OnlineBankStatementProviderGoCardlessPayments(models.Model):
         journal_currency = journal.currency_id or journal.company_id.currency_id
         new_lines = []
         for values in wanted_lines:
+            values = dict(values)
             currency_code = values.pop("currency_code", None)
             if (
                 currency_code
@@ -80,12 +81,66 @@ class OnlineBankStatementProviderGoCardlessPayments(models.Model):
                 and currency_code != journal_currency.name
             ):
                 continue
+            values = self._gc_prepare_line_values(values)
             existing = self._gc_find_statement_line(values.get("unique_import_id"))
             if not existing:
                 new_lines.append(values)
                 continue
             self._gc_write_existing_line(existing, values)
         return new_lines, {}
+
+    def _gc_prepare_line_values(self, values):
+        """Map GoCardless customer fields onto an Odoo partner, drop extras."""
+        partner = self._gc_match_partner(values)
+        if partner:
+            values["partner_id"] = partner.id
+            values["partner_name"] = values.get("partner_name") or partner.name
+        return values
+
+    def _gc_match_partner(self, values):
+        """Prefer e-mail, then IBAN, then unique name. Skip ambiguous matches."""
+        Partner = self.env["res.partner"]
+        email = (values.pop("partner_email", None) or "")
+        if email is True or email is False:
+            email = ""
+        email = str(email).strip()
+        company = values.pop("partner_company", None) or ""
+        if company is True or company is False:
+            company = ""
+        company = str(company).strip()
+        values.pop("gc_customer_id", None)
+        account_number = (values.get("account_number") or "")
+        if account_number is True or account_number is False:
+            account_number = ""
+        account_number = str(account_number).replace(" ", "")
+        name = values.get("partner_name") or ""
+        if name is True or name is False:
+            name = ""
+        name = str(name).strip()
+
+        if email:
+            found = Partner.search([("email", "=ilike", email)], limit=2)
+            if len(found) == 1:
+                return found
+        if account_number:
+            Bank = self.env["res.partner.bank"]
+            domain = [("acc_number", "ilike", account_number)]
+            if "sanitized_acc_number" in Bank._fields:
+                domain = [
+                    "|",
+                    ("acc_number", "=", account_number),
+                    ("sanitized_acc_number", "=", account_number),
+                ]
+            bank = Bank.search(domain, limit=1)
+            if bank:
+                return bank.partner_id
+        for candidate in (company, name):
+            if not candidate:
+                continue
+            found = Partner.search([("name", "=ilike", candidate)], limit=2)
+            if len(found) == 1:
+                return found
+        return Partner.browse()
 
     def _gc_find_statement_line(self, unique_import_id):
         if not unique_import_id:
@@ -103,6 +158,12 @@ class OnlineBankStatementProviderGoCardlessPayments(models.Model):
             updates["payment_ref"] = values["payment_ref"]
         if "narration" in values and line.narration != values["narration"]:
             updates["narration"] = values["narration"]
+        if values.get("partner_name") and line.partner_name != values["partner_name"]:
+            updates["partner_name"] = values["partner_name"]
+        if values.get("partner_id") and not line.partner_id:
+            updates["partner_id"] = values["partner_id"]
+        if values.get("account_number") and not line.account_number:
+            updates["account_number"] = values["account_number"]
         new_amount = float(values.get("amount") or 0.0)
         amount_changed = abs(float(line.amount) - new_amount) > 0.0001
         if amount_changed:
