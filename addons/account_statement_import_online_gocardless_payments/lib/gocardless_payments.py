@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 from urllib.parse import urlencode, urljoin
+
+_logger = logging.getLogger(__name__)
 
 GC_API_BASE = "https://api.gocardless.com"
 GC_SANDBOX_API_BASE = "https://api-sandbox.gocardless.com"
@@ -32,10 +35,12 @@ class GoCardlessConfigError(ValueError):
 
 
 class GoCardlessHTTPError(RuntimeError):
-    def __init__(self, status_code: int, body: str):
+    def __init__(self, status_code: int, body: str, url: str = ""):
         self.status_code = status_code
         self.body = body
-        super().__init__(f"GoCardless API error {status_code}: {body}")
+        self.url = url
+        suffix = f" [{url}]" if url else ""
+        super().__init__(f"GoCardless API error {status_code}: {body}{suffix}")
 
 
 def verify_webhook_signature(secret: str, raw_body: bytes, header_value: str | None) -> bool:
@@ -74,12 +79,6 @@ def _as_iso(value: datetime | date) -> str:
     else:
         dt = dt.astimezone(timezone.utc)
     return dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _as_date(value: datetime | date) -> str:
-    if isinstance(value, datetime):
-        return value.date().isoformat()
-    return value.isoformat()
 
 
 def _merge_by_id(*groups: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -316,14 +315,24 @@ class GoCardlessPaymentsClient:
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         if self._http_get is None:
             raise GoCardlessConfigError("No HTTP backend configured")
-        status, payload = self._http_get(self._url(path, params), self._headers())
+        url = self._url(path, params)
+        status, payload = self._http_get(url, self._headers())
         if status >= 400:
             body = payload if isinstance(payload, str) else str(payload)
-            raise GoCardlessHTTPError(status, body)
+            raise GoCardlessHTTPError(status, body, url)
         if not isinstance(payload, dict):
-            raise GoCardlessHTTPError(status, f"Unexpected payload: {payload!r}")
+            raise GoCardlessHTTPError(status, f"Unexpected payload: {payload!r}", url)
         self._ingest_linked(payload)
         return payload
+
+    def _try_list(self, label: str, fn: Callable[[], list[dict[str, Any]]]) -> list[dict[str, Any]]:
+        try:
+            return fn()
+        except GoCardlessHTTPError as error:
+            if error.status_code in (401, 403):
+                raise
+            _logger.warning("GoCardless %s skipped: %s", label, error)
+            return []
 
     def _ingest_linked(self, payload: dict[str, Any]) -> None:
         linked = payload.get("linked") or {}
@@ -446,38 +455,34 @@ class GoCardlessPaymentsClient:
             else datetime.combine(date_since, datetime.min.time())
             - timedelta(days=self.status_lookback_days)
         )
+        # List + include is an invalid filter combo. Resolve customers via mandate.
         return self._paginate(
             "payments",
             "payments",
             {
                 "created_at[gte]": _as_iso(lookback_start),
                 "created_at[lte]": _as_iso(date_until),
-                "include": PAYMENT_INCLUDE,
-            },
-        )
-
-    def iter_payments_by_charge_date(
-        self, date_since: datetime | date, date_until: datetime | date
-    ) -> list[dict[str, Any]]:
-        # Do not send include= here — GoCardless 400s on include + charge_date.
-        return self._paginate(
-            "payments",
-            "payments",
-            {
-                "charge_date[gte]": _as_date(date_since),
-                "charge_date[lte]": _as_date(date_until),
             },
         )
 
     def iter_payments_for_payout(self, payout_id: str) -> list[dict[str, Any]]:
+        """Payments that funded a payout. /payments?payout= is an invalid filter."""
         if not payout_id:
             return []
-        # Do not send include= here — GoCardless 400s on include + payout.
-        return self._paginate(
-            "payments",
-            "payments",
-            {"payout": payout_id},
-        )
+        items = self._paginate("payout_items", "payout_items", {"payout": payout_id})
+        payments: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in items:
+            if (item.get("type") or "") != "payment":
+                continue
+            payment_id = ((item.get("links") or {}).get("payment")) or ""
+            if not payment_id or payment_id in seen:
+                continue
+            seen.add(payment_id)
+            payment = self.get_payment(payment_id)
+            if payment:
+                payments.append(payment)
+        return payments
 
     def iter_payouts(self, date_since: datetime | date, date_until: datetime | date) -> list[dict[str, Any]]:
         return self._paginate(
@@ -504,19 +509,25 @@ class GoCardlessPaymentsClient:
         date_since: datetime | date,
         date_until: datetime | date,
     ) -> list[dict[str, Any]]:
-        payouts = self.iter_payouts(date_since, date_until)
+        payouts = self._try_list("payouts", lambda: self.iter_payouts(date_since, date_until))
         payments = _merge_by_id(
-            self.iter_payments(date_since, date_until),
-            self.iter_payments_by_charge_date(date_since, date_until),
+            self._try_list("payments", lambda: self.iter_payments(date_since, date_until)),
             *(
-                self.iter_payments_for_payout(payout.get("id") or "")
+                self._try_list(
+                    f"payout_items {payout.get('id')}",
+                    lambda payout_id=payout.get("id") or "": self.iter_payments_for_payout(
+                        payout_id
+                    ),
+                )
                 for payout in payouts
             ),
         )
         lines = [self._line_from_payment(payment) for payment in payments]
         for payout in payouts:
             lines.extend(statement_lines_from_payout(payout))
-        for refund in self.iter_refunds(date_since, date_until):
+        for refund in self._try_list(
+            "refunds", lambda: self.iter_refunds(date_since, date_until)
+        ):
             lines.append(self._line_from_refund(refund))
         return lines
 

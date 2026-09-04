@@ -217,14 +217,8 @@ def test_client_paginates_payments_and_builds_lines():
     assert lines[1]["amount"] == 0.0
     payment_urls = [url for url in calls if "/payments" in url]
     assert payment_urls
-    assert all("customer_bank_account" not in url for url in payment_urls)
-    assert any("include=customer" in url and "mandate" in url for url in payment_urls)
-    assert all(
-        "include=" not in url
-        for url in payment_urls
-        if "payout=" in url or "charge_date" in url
-    )
-    assert any("created_at" in url and "gte" in url.replace("%5B", "[").replace("%5D", "]") or "created_at" in url for url in calls)
+    assert all("include=" not in url for url in payment_urls if "?" in url)
+    assert any("created_at" in url for url in calls)
 
 
 def test_customer_resolved_via_mandate_when_payment_has_no_customer_link():
@@ -326,12 +320,20 @@ def test_old_collections_are_pulled_via_their_payout():
     }
 
     def http_get(url, headers):
+        if "/payout_items" in url:
+            return 200, {
+                "payout_items": [
+                    {"type": "payment", "links": {"payment": "PMOLD"}},
+                    {"type": "gocardless_fee", "links": {"payout": "PO99"}},
+                ],
+                "meta": {"cursors": {}},
+            }
         if "/payouts" in url:
             return 200, {"payouts": [payout], "meta": {"cursors": {}}}
         if "/refunds" in url:
             return 200, {"refunds": [], "meta": {"cursors": {}}}
-        if "/payments" in url and "payout=PO99" in url:
-            return 200, {"payments": [old_payment], "meta": {"cursors": {}}}
+        if "payments/PMOLD" in url:
+            return 200, {"payments": old_payment}
         if "/payments" in url:
             return 200, {"payments": [], "meta": {"cursors": {}}}
         if "customers/CU1" in url:
@@ -352,7 +354,7 @@ def test_old_collections_are_pulled_via_their_payout():
     assert "INV-9" in collection["payment_ref"]
 
 
-def test_payout_and_charge_date_queries_omit_include():
+def test_payout_collections_use_payout_items_not_payment_filters():
     payout = {
         "id": "PO99",
         "amount": 10000,
@@ -366,6 +368,8 @@ def test_payout_and_charge_date_queries_omit_include():
 
     def http_get(url, headers):
         calls.append(url)
+        if "/payout_items" in url:
+            return 200, {"payout_items": [], "meta": {"cursors": {}}}
         if "/payouts" in url:
             return 200, {"payouts": [payout], "meta": {"cursors": {}}}
         if "/refunds" in url:
@@ -376,10 +380,45 @@ def test_payout_and_charge_date_queries_omit_include():
 
     client = GoCardlessPaymentsClient("tok", http_get=http_get, status_lookback_days=1)
     client.obtain_statement_lines(datetime(2026, 9, 4), datetime(2026, 9, 5))
-    payout_urls = [url for url in calls if "/payments" in url and "payout=" in url]
-    charge_urls = [url for url in calls if "/payments" in url and "charge_date" in url]
-    assert payout_urls and all("include=" not in url for url in payout_urls)
-    assert charge_urls and all("include=" not in url for url in charge_urls)
+    assert any("/payout_items" in url and "payout=PO99" in url for url in calls)
+    assert not any("/payments" in url and "payout=" in url for url in calls)
+    assert not any("charge_date" in url for url in calls)
+
+
+def test_invalid_payout_items_filter_does_not_abort_payment_pull():
+    payout = {
+        "id": "PO1",
+        "amount": 10000,
+        "deducted_fees": 0,
+        "currency": "EUR",
+        "status": "paid",
+        "arrival_date": "2026-09-04",
+        "created_at": "2026-09-04T08:00:00.000Z",
+    }
+
+    def http_get(url, headers):
+        if "/payout_items" in url:
+            return 400, {
+                "error": {"message": "Combination of filters requested is invalid"}
+            }
+        if "/payouts" in url:
+            return 200, {"payouts": [payout], "meta": {"cursors": {}}}
+        if "/refunds" in url:
+            return 200, {"refunds": [], "meta": {"cursors": {}}}
+        if "/payments" in url:
+            return 200, {
+                "payments": [_payment(status="confirmed")],
+                "meta": {"cursors": {}},
+            }
+        if "customers/CU1" in url:
+            return 200, {"customers": {"given_name": "Ada", "family_name": "Lovelace"}}
+        return 404, url
+
+    client = GoCardlessPaymentsClient("tok", http_get=http_get, status_lookback_days=1)
+    lines = client.obtain_statement_lines(datetime(2026, 9, 4), datetime(2026, 9, 5))
+    ids = [line["unique_import_id"] for line in lines]
+    assert "gc:pay:PM123" in ids
+    assert "gc:payout:PO1" in ids
 
 
 def test_payout_webhook_also_imports_the_collections():
@@ -396,11 +435,13 @@ def test_payout_webhook_also_imports_the_collections():
     def http_get(url, headers):
         if "payouts/PO1" in url:
             return 200, {"payouts": payout}
-        if "/payments" in url and "payout=PO1" in url:
+        if "/payout_items" in url:
             return 200, {
-                "payments": [_payment(status="paid_out")],
+                "payout_items": [{"type": "payment", "links": {"payment": "PM123"}}],
                 "meta": {"cursors": {}},
             }
+        if "payments/PM123" in url:
+            return 200, {"payments": _payment(status="paid_out")}
         if "customers/CU1" in url:
             return 200, {"customers": {"company_name": "Acme GmbH"}}
         return 404, url

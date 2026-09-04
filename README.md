@@ -112,8 +112,9 @@ Bankfeed und wird über Geldtransit gegen den Payout abgestimmt.
 
 Rechnungen zahlst du gegen die **Einzugszeile** (`[confirmed] Kundenname — Referenz`,
 Payment-ID `PMxxx`), nicht gegen die Sammelauszahlung (`[payout paid] Bank transfer POxxx`).
-Der Provider zieht die Abbuchungen per `created_at`, `charge_date` **und** über
-jedes Payout (`GET /payments?payout=POxxx`), plus Name/E-Mail/IBAN über das Mandat.
+Der Provider zieht die Abbuchungen per `created_at` und über
+`GET /payout_items?payout=POxxx` (nicht `/payments?payout=` — das ist 400),
+plus Name/E-Mail/IBAN über das Mandat.
 OCA würde Einzüge mit älterem Charge-Datum sonst verwerfen — die werden direkt
 angelegt. Details: SETUP.md Schritt 10b.
 
