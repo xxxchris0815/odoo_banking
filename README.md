@@ -116,7 +116,9 @@ Der Provider zieht die Abbuchungen per `created_at` und über
 `GET /payout_items?payout=POxxx` (nicht `/payments?payout=` — das ist 400),
 plus Name/E-Mail/IBAN über das Mandat.
 OCA würde Einzüge mit älterem Charge-Datum sonst verwerfen — die werden direkt
-angelegt. Details: SETUP.md Schritt 10b.
+angelegt, aber nur wenn sie zu einem Payout im Pull-Fenster gehören.
+Zukünftige Raten (Charge-Datum nach dem Bis-Datum) bleiben draußen.
+Details: SETUP.md Schritt 10b.
 
 Webhook `/gocardless/payments/webhook` zieht Fehlschläge sofort nach.
 Der Cron holt zusätzlich 90 Tage zurück, falls ein Webhook verloren ging.

@@ -11,6 +11,7 @@ from account_statement_import_online_gocardless_payments.lib.gocardless_payments
     clearing_balance,
     format_customer_name,
     payment_amount,
+    payment_in_pull_window,
     statement_line_from_payment,
     statement_line_from_refund,
     statement_lines_from_payout,
@@ -298,6 +299,36 @@ def test_included_linked_customers_avoid_extra_gets():
     assert not any("/mandates/" in url for url in calls)
 
 
+def test_future_instalments_stay_out_of_an_earlier_pull():
+    future = _payment(
+        id="PMFUT",
+        status="pending_submission",
+        created_at="2026-07-01T10:00:00.000Z",
+        charge_date="2026-11-13",
+        reference="Restzahlung 4/4",
+    )
+
+    def http_get(url, headers):
+        if "/payouts" in url:
+            return 200, {"payouts": [], "meta": {"cursors": {}}}
+        if "/refunds" in url:
+            return 200, {"refunds": [], "meta": {"cursors": {}}}
+        if "/payments" in url:
+            return 200, {"payments": [future], "meta": {"cursors": {}}}
+        return 404, url
+
+    client = GoCardlessPaymentsClient("tok", http_get=http_get, status_lookback_days=90)
+    lines = client.obtain_statement_lines(datetime(2026, 8, 30), datetime(2026, 9, 5))
+    assert lines == []
+    assert payment_in_pull_window(future, datetime(2026, 8, 30), datetime(2026, 9, 5)) is False
+    assert payment_in_pull_window(
+        future,
+        datetime(2026, 8, 30),
+        datetime(2026, 9, 5),
+        payout_payment_ids={"PMFUT"},
+    )
+
+
 def test_old_collections_are_pulled_via_their_payout():
     """A payout today must still yield the Direct Debits that funded it."""
     old_payment = _payment(
@@ -407,7 +438,7 @@ def test_invalid_payout_items_filter_does_not_abort_payment_pull():
             return 200, {"refunds": [], "meta": {"cursors": {}}}
         if "/payments" in url:
             return 200, {
-                "payments": [_payment(status="confirmed")],
+                "payments": [_payment(status="confirmed", charge_date="2026-09-04")],
                 "meta": {"cursors": {}},
             }
         if "customers/CU1" in url:

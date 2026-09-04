@@ -91,6 +91,41 @@ def _merge_by_id(*groups: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(by_id.values())
 
 
+def _naive_dt(value: datetime | date | None) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    return None
+
+
+def payment_in_pull_window(
+    payment: dict[str, Any],
+    date_since: datetime | date,
+    date_until: datetime | date,
+    *,
+    payout_payment_ids: set[str] | None = None,
+) -> bool:
+    """Keep collections charged in the window, or ones that funded a payout.
+
+    Instalments are created months ahead (created_at in the past, charge_date
+    in October/November). Those must not appear on a September pull.
+    """
+    pay_id = payment.get("id") or ""
+    if pay_id and payout_payment_ids and pay_id in payout_payment_ids:
+        return True
+    charge = _parse_datetime(payment.get("charge_date")) or _parse_datetime(
+        payment.get("created_at")
+    )
+    since = _naive_dt(date_since)
+    until = _naive_dt(date_until)
+    if charge is None or since is None or until is None:
+        return False
+    return since <= charge < until
+
+
 def payment_amount(payment: dict[str, Any]) -> float:
     """Economic amount on the clearing journal for the current status."""
     major = abs(minor_to_major(payment.get("amount") or 0, payment.get("currency") or "EUR"))
@@ -510,18 +545,32 @@ class GoCardlessPaymentsClient:
         date_until: datetime | date,
     ) -> list[dict[str, Any]]:
         payouts = self._try_list("payouts", lambda: self.iter_payouts(date_since, date_until))
-        payments = _merge_by_id(
-            self._try_list("payments", lambda: self.iter_payments(date_since, date_until)),
-            *(
+        payout_payments: list[dict[str, Any]] = []
+        for payout in payouts:
+            payout_payments.extend(
                 self._try_list(
                     f"payout_items {payout.get('id')}",
                     lambda payout_id=payout.get("id") or "": self.iter_payments_for_payout(
                         payout_id
                     ),
                 )
-                for payout in payouts
-            ),
-        )
+            )
+        payout_payment_ids = {row.get("id") for row in payout_payments if row.get("id")}
+        payments = [
+            payment
+            for payment in _merge_by_id(
+                self._try_list(
+                    "payments", lambda: self.iter_payments(date_since, date_until)
+                ),
+                payout_payments,
+            )
+            if payment_in_pull_window(
+                payment,
+                date_since,
+                date_until,
+                payout_payment_ids=payout_payment_ids,
+            )
+        ]
         lines = [self._line_from_payment(payment) for payment in payments]
         for payout in payouts:
             lines.extend(statement_lines_from_payout(payout))

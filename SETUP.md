@@ -204,8 +204,17 @@ Zweite Währung = zweites Journal (`PPUSD`, `ZENUSD`, …).
 
 #### C) Testen
 
-1. Provider-Formular → **Pull Online Bank Statement** → letzte 7 Tage.
-2. Oder einen Sandbox-Einzug auslösen: im Journal `GC` erscheint
+1. Provider-Formular → **Pull Online Bank Statement**.
+   Die Uhrzeit im Wizard kommt von OCA; bei täglichen Auszügen zählt
+   nur der Kalendertag (Mitternacht bis Mitternacht). 22:28 ist egal.
+2. **Show Transaction Data** (Debug) zeigt nur **neue** Zeilen. Schon
+   importierte IDs kommen als `[]` — das heißt nicht „nichts bei
+   GoCardless“, sondern „schon im Journal“.
+3. Es werden nur Einzüge mit Charge-Datum im Zeitraum importiert, plus
+   Einzüge die zu einem Payout in diesem Zeitraum gehören. Zukünftige
+   Raten (`pending_submission` im Oktober/November) bleiben draußen,
+   bis ihr bis zu deren Einzugsdatum pullt.
+4. Oder einen Sandbox-Einzug auslösen: im Journal `GC` erscheint
    `[submitted] Kundenname — Referenz` / 0, nach Confirm dieselbe Zeile mit +.
 
 Payouts nicht per n8n auf dieses Journal schreiben. Die Hausbank bekommt

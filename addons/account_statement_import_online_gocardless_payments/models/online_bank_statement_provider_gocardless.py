@@ -93,6 +93,13 @@ class OnlineBankStatementProviderGoCardlessPayments(models.Model):
             return True
         return since <= when < until
 
+    def _gc_date_after_window(self, line_date, date_until):
+        when = self._gc_as_naive_datetime(line_date)
+        until = self._gc_as_naive_datetime(date_until)
+        if when is None or until is None:
+            return False
+        return when >= until
+
     def _gc_create_new_line(self, values):
         """Create a collection even if OCA would drop it for being out of day."""
         create_vals = {
@@ -137,16 +144,15 @@ class OnlineBankStatementProviderGoCardlessPayments(models.Model):
             values = self._gc_prepare_line_values(values)
             existing = self._gc_find_statement_line(values.get("unique_import_id"))
             if not existing:
-                if (
-                    date_since is not None
-                    and date_until is not None
-                    and not self._gc_date_in_window(
+                if date_since is not None and date_until is not None:
+                    if self._gc_date_after_window(values.get("date"), date_until):
+                        continue
+                    if not self._gc_date_in_window(
                         values.get("date"), date_since, date_until
-                    )
-                ):
-                    self._gc_create_new_line(values)
-                    created += 1
-                    continue
+                    ):
+                        self._gc_create_new_line(values)
+                        created += 1
+                        continue
                 new_lines.append(values)
                 continue
             self._gc_write_existing_line(existing, values)
