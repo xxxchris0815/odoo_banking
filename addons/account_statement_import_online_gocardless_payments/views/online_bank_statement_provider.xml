@@ -14,20 +14,28 @@
                     invisible="service != 'gocardless_payments'"
                     name="gocardless_payments_help"
                 >
+                    <field
+                        name="password"
+                        password="True"
+                        string="Access Token"
+                    />
+                    <field
+                        name="passphrase"
+                        password="True"
+                        string="Webhook-Secret"
+                    />
+                    <field
+                        name="api_base"
+                        string="API-Adresse"
+                        placeholder="leer = Live (api.gocardless.com)"
+                    />
                     <div colspan="2" class="text-muted">
                         <p>
-                            Clearing journal for Direct Debit collections — not Open Banking.
-                            Password = Access Token (Live or Sandbox).
-                            Passphrase = Webhook endpoint secret.
-                            API Base empty = https://api.gocardless.com,
-                            sandbox = https://api-sandbox.gocardless.com.
-                        </p>
-                        <p>
-                            Webhook URL: /gocardless/payments/webhook
-                            Each collection appears immediately. Failed / cancelled /
-                            charged_back updates the same line (amount goes to 0).
-                            Payouts and deducted fees leave the journal so the balance
-                            returns to 0; the bank feed books the incoming payout.
+                            Access Token aus dem GoCardless-Dashboard (Developers).
+                            Webhook-Secret vom Endpoint
+                            https://DEINE-DOMAIN/gocardless/payments/webhook
+                            API-Adresse leer lassen für Live; Sandbox:
+                            https://api-sandbox.gocardless.com
                         </p>
                     </div>
                 </group>

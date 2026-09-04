@@ -167,24 +167,47 @@ Zweite Währung = zweites Journal (`PPUSD`, `ZENUSD`, …).
    - API Base leer = Produktion
 4. Speichern.
 
-### 6c GoCardless Payments (Einzüge)
+### 6c GoCardless Payments — Daten eintragen
 
-1. Journal *GoCardless Clearing*, Konto = Clearing aus Schritt 4
-   (abstimmbar, nicht die Hausbank).
-2. Bank Feeds = **Online (OCA)** → Provider **GoCardless Payments**.
-3. Provider öffnen:
-   - Password = Access Token
-   - Passphrase = Webhook-Secret
-   - API Base leer = Live, sonst `https://api-sandbox.gocardless.com`
-   - Intervall 1 Stunde (Fallback, falls ein Webhook ausfällt)
-4. In GoCardless den Webhook auf
-   `https://DEINE-ODOO/gocardless/payments/webhook` zeigen.
-5. Test: einen Einzug im Sandbox anlegen — Zeile mit `[submitted]` und
-   Betrag 0. Nach Confirm: dieselbe Zeile, Betrag +. Nach Fail:
-   dieselbe Zeile, `[failed]`, Betrag 0.
+#### A) Keys bei GoCardless holen
 
-Payouts nicht zusätzlich per n8n auf dieses Journal schreiben. Die
-Hausbank bekommt den Eingang aus ihrem eigenen Auszug.
+1. Einloggen unter [manage.gocardless.com](https://manage.gocardless.com)
+   (Tests: [manage-sandbox.gocardless.com](https://manage-sandbox.gocardless.com)).
+2. **Developers** → **Create access token** → Name z. B. `Odoo` →
+   Read-Write → Token **sofort kopieren** (nur einmal sichtbar).
+3. **Developers** → **Webhooks** → **Add endpoint**
+   - URL: `https://DEINE-DOMAIN/gocardless/payments/webhook`
+   - Events: `payments`, `payouts`, `refunds`
+   - Endpoint-Secret kopieren.
+
+#### B) Journal und Provider in Odoo
+
+1. App **Fakturierung** (Community) bzw. **Buchhaltung**.
+2. Benutzer muss **Vollständige Buchhaltungsfunktionen anzeigen** haben,
+   sonst fehlt das Menü.
+3. **Konfiguration → Journale** → Journal `GC` öffnen (Typ Bank,
+   Buchungskonto = GoCardless-Clearing).
+4. Feld **Bankauszüge / Bank Feeds** = **Online (OCA)**.
+5. Darunter Provider **GoCardless Payments** wählen (nicht das OCA
+   „GoCardless“ ohne *Payments* — das ist Open Banking).
+6. Speichern. Odoo legt den Provider an.
+7. Den Provider-Namen anklicken (oder **Konfiguration → Online Bank
+   Statement Providers** → den Eintrag zum Journal `GC` öffnen).
+8. Im Kasten **GoCardless Payments**:
+   - **Access Token** = Token aus Schritt A2
+   - **Webhook-Secret** = Secret aus Schritt A3
+   - **API-Adresse** leer = Live; Sandbox:
+     `https://api-sandbox.gocardless.com`
+9. Speichern.
+
+#### C) Testen
+
+1. Provider-Formular → **Pull Online Bank Statement** → letzte 7 Tage.
+2. Oder einen Sandbox-Einzug auslösen: im Journal `GC` erscheint
+   `[submitted]` / 0, nach Confirm dieselbe Zeile mit +.
+
+Payouts nicht per n8n auf dieses Journal schreiben. Die Hausbank bekommt
+den Eingang aus ihrem eigenen Auszug.
 
 ### 6d Jeeves
 
