@@ -18,7 +18,8 @@ GC_SANDBOX_API_BASE = "https://api-sandbox.gocardless.com"
 GC_API_VERSION = "2015-07-06"
 DEFAULT_PAGE_LIMIT = 100
 STATUS_LOOKBACK_DAYS = 90
-PAYMENT_INCLUDE = "customer,mandate,customer_bank_account"
+# Payments accept only these includes; customer_bank_account is 422.
+PAYMENT_INCLUDE = "customer,mandate"
 
 COLLECTED_STATUSES = frozenset({"confirmed", "paid_out"})
 PAYOUT_BOOK_STATUSES = frozenset({"pending", "paid"})
@@ -346,10 +347,7 @@ class GoCardlessPaymentsClient:
         return (self._get(f"payouts/{payout_id}") or {}).get("payouts") or {}
 
     def get_refund(self, refund_id: str) -> dict[str, Any]:
-        payload = self._get(
-            f"refunds/{refund_id}", {"include": "customer,mandate,payment"}
-        )
-        return payload.get("refunds") or {}
+        return (self._get(f"refunds/{refund_id}") or {}).get("refunds") or {}
 
     def get_customer(self, customer_id: str) -> dict[str, Any]:
         if not customer_id:

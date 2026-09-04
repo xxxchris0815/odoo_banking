@@ -215,7 +215,10 @@ def test_client_paginates_payments_and_builds_lines():
     assert lines[0]["payment_ref"] == "[confirmed] Ada Lovelace — INV-1042"
     assert lines[0]["amount"] == 100.0
     assert lines[1]["amount"] == 0.0
-    assert any("include=" in url and "payments" in url for url in calls)
+    payment_urls = [url for url in calls if "/payments" in url]
+    assert payment_urls
+    assert all("customer_bank_account" not in url for url in payment_urls)
+    assert any("include=customer" in url and "mandate" in url for url in payment_urls)
     assert any("created_at" in url and "gte" in url.replace("%5B", "[").replace("%5D", "]") or "created_at" in url for url in calls)
 
 
