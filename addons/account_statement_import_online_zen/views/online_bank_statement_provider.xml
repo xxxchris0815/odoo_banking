@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <odoo>
-    <record id="online_bank_statement_provider_form_zen" model="ir.ui.view">
+    <record model="ir.ui.view" id="online_bank_statement_provider_form_zen">
         <field name="name">online.bank.statement.provider.form.zen</field>
         <field name="model">online.bank.statement.provider</field>
         <field
@@ -9,27 +9,24 @@
         />
         <field name="arch" type="xml">
             <xpath expr="//group[@name='main']" position="inside">
-                <group
-                    name="zen"
-                    string="Credentials"
-                    invisible="service != 'zen'"
-                >
-                    <field
-                        name="password"
-                        password="True"
-                        string="ZEN API-Key"
-                        required="service == 'zen'"
-                    />
-                    <field
-                        name="username"
-                        string="Account-UUID"
-                        placeholder="optional, wenn die Journal-IBAN eindeutig ist"
-                    />
-                    <field
-                        name="api_base"
-                        string="API-Adresse"
-                        placeholder="leer = https://api-services.zen.com"
-                    />
+                <group name="zen" string="Credentials" invisible="service != 'zen'">
+                    <group>
+                        <field
+                            name="api_base"
+                            string="API base"
+                            groups="base.group_no_one"
+                        />
+                        <field
+                            name="username"
+                            string="Account UUID"
+                        />
+                        <field
+                            name="password"
+                            string="API Key"
+                            password="True"
+                            required="service == 'zen'"
+                        />
+                    </group>
                 </group>
             </xpath>
         </field>

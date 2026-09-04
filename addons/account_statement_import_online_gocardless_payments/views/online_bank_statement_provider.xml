@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <odoo>
-    <record id="online_bank_statement_provider_form_gc_payments" model="ir.ui.view">
+    <record model="ir.ui.view" id="online_bank_statement_provider_form_gc_payments">
         <field name="name">online.bank.statement.provider.form.gocardless.payments</field>
         <field name="model">online.bank.statement.provider</field>
         <field
@@ -14,22 +14,24 @@
                     string="Credentials"
                     invisible="service != 'gocardless_payments'"
                 >
-                    <field
-                        name="password"
-                        password="True"
-                        string="Access Token"
-                        required="service == 'gocardless_payments'"
-                    />
-                    <field
-                        name="passphrase"
-                        password="True"
-                        string="Webhook-Secret"
-                    />
-                    <field
-                        name="api_base"
-                        string="API-Adresse"
-                        placeholder="leer = Live (api.gocardless.com)"
-                    />
+                    <group>
+                        <field
+                            name="api_base"
+                            string="API base"
+                            groups="base.group_no_one"
+                        />
+                        <field
+                            name="password"
+                            string="Access Token"
+                            password="True"
+                            required="service == 'gocardless_payments'"
+                        />
+                        <field
+                            name="passphrase"
+                            string="Webhook Secret"
+                            password="True"
+                        />
+                    </group>
                 </group>
             </xpath>
         </field>
