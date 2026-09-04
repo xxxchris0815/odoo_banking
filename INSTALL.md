@@ -303,6 +303,39 @@ Apps-Liste aktualisieren.
 
 ---
 
+## Update (neue Version dieses Repos)
+
+Auf dem Host, nicht im Container:
+
+```bash
+cd /opt/odoo/extra-addons/odoo_banking
+git fetch origin
+git checkout cursor/community-banking-stack-f606
+git pull origin cursor/community-banking-stack-f606
+```
+
+Dann die Module **upgraden** (nicht neu installieren). Datenbanknamen
+ersetzen, falls er nicht `odoo` ist (`grep db_name` in der Conf):
+
+```bash
+cd /opt/odoo
+docker compose exec odoo odoo -c /etc/odoo/odoo.conf \
+  -d odoo \
+  -u banking_community,account_statement_import_online_gocardless_payments \
+  --stop-after-init --http-port=8070
+```
+
+Danach den normalen Container weiterlaufen lassen bzw.
+
+```bash
+docker compose restart
+```
+
+Ohne Konsole: Apps → Filter *Apps* aus → Community Banking Stack →
+**Aktualisieren**.
+
+---
+
 ## Danach
 
 Weiter mit [SETUP.md](SETUP.md) ab Schritt 4 (Konten, Journals, Keys).
