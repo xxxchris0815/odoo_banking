@@ -1,0 +1,162 @@
+# License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
+
+import logging
+from datetime import timedelta
+
+import requests
+
+from odoo import api, models
+from odoo.exceptions import UserError
+
+from ..lib.gocardless_payments import (
+    GC_API_BASE,
+    GoCardlessConfigError,
+    GoCardlessHTTPError,
+    GoCardlessPaymentsClient,
+)
+
+_logger = logging.getLogger(__name__)
+
+
+def _requests_get(url, headers):
+    response = requests.get(url, headers=headers, timeout=30)
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = response.text
+    return response.status_code, payload
+
+
+class OnlineBankStatementProviderGoCardlessPayments(models.Model):
+    _inherit = "online.bank.statement.provider"
+
+    @api.model
+    def _get_available_services(self):
+        return super()._get_available_services() + [
+            ("gocardless_payments", "GoCardless Payments"),
+        ]
+
+    def _obtain_statement_data(self, date_since, date_until):
+        self.ensure_one()
+        if self.service != "gocardless_payments":
+            return super()._obtain_statement_data(date_since, date_until)
+        return self._gc_obtain_statement_data(date_since, date_until)
+
+    def _gc_client(self):
+        self.ensure_one()
+        if not self.password:
+            raise UserError(
+                self.env._("Please set the GoCardless access token on the provider.")
+            )
+        return GoCardlessPaymentsClient(
+            self.password,
+            api_base=self.api_base or GC_API_BASE,
+            http_get=_requests_get,
+        )
+
+    def _gc_obtain_statement_data(self, date_since, date_until):
+        self.ensure_one()
+        try:
+            wanted = self._gc_client().obtain_statement_lines(date_since, date_until)
+        except (GoCardlessConfigError, GoCardlessHTTPError) as error:
+            raise UserError(str(error)) from error
+        return self._gc_upsert_lines(wanted)
+
+    def _gc_upsert_lines(self, wanted_lines):
+        """Update existing collection lines when GoCardless changes status.
+
+        New ids go through the normal OCA statement creator. Existing ids are
+        written in place so a failed Direct Debit does not create a duplicate.
+        """
+        self.ensure_one()
+        journal = self.journal_id
+        journal_currency = journal.currency_id or journal.company_id.currency_id
+        new_lines = []
+        for values in wanted_lines:
+            currency_code = values.pop("currency_code", None)
+            if (
+                currency_code
+                and journal_currency
+                and currency_code != journal_currency.name
+            ):
+                continue
+            existing = self._gc_find_statement_line(values.get("unique_import_id"))
+            if not existing:
+                new_lines.append(values)
+                continue
+            self._gc_write_existing_line(existing, values)
+        return new_lines, {}
+
+    def _gc_find_statement_line(self, unique_import_id):
+        if not unique_import_id:
+            return self.env["account.bank.statement.line"]
+        Line = self.env["account.bank.statement.line"]
+        domain = [
+            ("journal_id", "=", self.journal_id.id),
+            ("unique_import_id", "ilike", unique_import_id),
+        ]
+        return Line.search(domain, limit=1)
+
+    def _gc_write_existing_line(self, line, values):
+        updates = {}
+        if values.get("payment_ref") and line.payment_ref != values["payment_ref"]:
+            updates["payment_ref"] = values["payment_ref"]
+        if "narration" in values and line.narration != values["narration"]:
+            updates["narration"] = values["narration"]
+        new_amount = float(values.get("amount") or 0.0)
+        amount_changed = abs(float(line.amount) - new_amount) > 0.0001
+        if amount_changed:
+            if getattr(line, "is_reconciled", False):
+                _logger.info(
+                    "GoCardless line %s is reconciled, posting adjustment instead of rewrite",
+                    line.unique_import_id,
+                )
+                self._gc_create_adjustment(line, values, new_amount - line.amount)
+            else:
+                updates["amount"] = new_amount
+        if updates:
+            line.write(updates)
+            _logger.info(
+                "Updated GoCardless line %s to %s amount %s",
+                line.unique_import_id,
+                values.get("payment_ref"),
+                values.get("amount"),
+            )
+
+    def _gc_create_adjustment(self, line, values, delta):
+        if not delta:
+            return
+        suffix = (values.get("transaction_type") or "adj").replace(" ", "_")
+        adjustment = {
+            "date": values.get("date") or line.date,
+            "payment_ref": values.get("payment_ref") or line.payment_ref,
+            "ref": f"{line.ref or ''}-adj-{suffix}",
+            "unique_import_id": f"{values.get('unique_import_id')}:adj:{suffix}",
+            "amount": delta,
+            "partner_name": line.partner_id.name if line.partner_id else False,
+            "narration": self.env._(
+                "Adjustment after GoCardless status change (original line reconciled)."
+            ),
+            "journal_id": self.journal_id.id,
+        }
+        already = self._gc_find_statement_line(adjustment["unique_import_id"])
+        if already:
+            return
+        self.env["account.bank.statement.line"].create(adjustment)
+
+    def _gc_handle_webhook_events(self, events):
+        """Apply payment/payout/refund events so failures hit the journal immediately."""
+        self.ensure_one()
+        client = self._gc_client()
+        wanted = []
+        for event in events:
+            wanted.extend(client.lines_for_event(event))
+        if not wanted:
+            return
+        new_lines, extras = self._gc_upsert_lines(wanted)
+        if not new_lines:
+            return
+        dates = [line["date"] for line in new_lines]
+        self._create_or_update_statement(
+            (new_lines, extras), min(dates), max(dates) + timedelta(days=1)
+        )

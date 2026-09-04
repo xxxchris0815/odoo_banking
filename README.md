@@ -21,7 +21,7 @@ dieses Repo als dünne Provider auf demselben Framework.
 
 ```
 PayPal API          ──►  OCA account_statement_import_online_paypal
-GoCardless BAD      ──►  OCA account_statement_import_online_gocardless
+GoCardless Einzüge  ──►  account_statement_import_online_gocardless_payments
 ZEN.COM Transfers   ──►  account_statement_import_online_zen   (dieses Repo)
 Jeeves CSV          ──►  account_statement_import_jeeves       (dieses Repo)
 Bank-CAMT/CSV       ──►  OCA account_statement_import_camt / sheet_file
@@ -75,6 +75,7 @@ Aus [OCA/bank-statement-import](https://github.com/OCA/bank-statement-import/tre
 Dieses Repo:
 
 - `account_statement_import_online_zen`
+- `account_statement_import_online_gocardless_payments`
 - `account_statement_import_jeeves`
 - `banking_community` — Meta-Modul, installiert den Stack in einem Schritt
 
@@ -92,23 +93,30 @@ Benutzergruppe: **Vollständige Buchhaltungsfunktionen anzeigen**.
 Nur gebuchte Transaktionen der letzten drei Jahre. Ältere Historie per
 PayPal-CSV und `account_statement_import_sheet_file`.
 
-### GoCardless — zwei verschiedene Produkte
+### GoCardless Payments — Clearing-Journal (dieses Repo)
 
-**A) Bank Account Data (Open Banking, ex Nordigen)**  
-Das ist der Odoo-Cloud-Weg für echte Bankkonten. OCA-Modul
-`account_statement_import_online_gocardless`. Secret ID + Key, dann
-„Select Bank Account Identifier“ und PSD2-Consent.
+Du ziehst Lastschriften ein. Dafür ein eigenes Journal `GC EUR` auf einem
+**abstimmbaren Clearing-Konto** (nicht die Hausbank):
 
-Neue Self-Service-Logins sind seit 2025 weitgehend geschlossen. Wenn dein
-bestehender BAD-Zugang noch läuft: weiter nutzen. Wenn nicht:
+| Ereignis | Zeile | Betrag |
+| --- | --- | --- |
+| Einzug submitted / pending | sichtbar, Status im Text | 0 |
+| Einzug confirmed / paid_out | dieselbe `unique_import_id` | +Betrag |
+| failed / cancelled / charged_back | dieselbe Zeile, Status nachgezogen | 0 |
+| Payout an die Hausbank | eigene Zeile | −Netto |
+| GoCardless-Gebühr | eigene Zeile | −Fee |
 
-- OCA-Alternative `account_statement_import_online_ponto`
-- oder CAMT.053 / CSV der Bank, nicht noch eine n8n-Mapping-Schicht
+Clearing steht wieder auf 0. Die Gutschrift auf der Hausbank kommt aus dem
+Bankfeed und wird über Geldtransit gegen den Payout abgestimmt.
 
-**B) GoCardless Payments (Lastschriften / Merchant-Payouts)**  
-Das ist kein Bankfeed. Payouts erscheinen bereits auf dem echten Bankkonto.
-Nicht parallel als zweites „Konto“ importieren, sonst doppelst du jede
-Auszahlung. n8n-Workflow dafür abschalten.
+Webhook `/gocardless/payments/webhook` zieht Fehlschläge sofort nach.
+Der Cron holt zusätzlich 90 Tage zurück, falls ein Webhook verloren ging.
+
+Access Token ins Provider-Password, Webhook-Secret ins Passphrase-Feld.
+Sandbox: API Base `https://api-sandbox.gocardless.com`.
+
+**Nicht** das OCA-Modul `account_statement_import_online_gocardless`
+verwenden — das ist Open Banking (Bank Account Data), nicht Einzüge.
 
 ### ZEN.COM — Modul in diesem Repo
 
@@ -153,7 +161,8 @@ Die Klick-Anleitung steht in [SETUP.md](SETUP.md). Kurz die Reihenfolge:
 4. Module installieren, Gruppe *Vollständige Buchhaltungsfunktionen*.
 5. Kontenplan: Geldtransit (abstimmbar), ein Geldkonto pro Wallet/Währung,
    Jeeves Credit als Verbindlichkeit.
-6. Ein Journal pro Konto und Währung, danach Provider am Journal.
+6. Ein Journal pro Konto und Währung. GoCardless = Clearing-Journal,
+   nicht die Hausbank. Danach Provider am Journal.
 7. Zuerst 7 Tage an **einem** Journal pullen, Re-Pull ohne Duplikate, dann
    Historie, dann das nächste Journal.
 8. Jeeves nur per Datei-Import, nicht parallel in n8n mappen.

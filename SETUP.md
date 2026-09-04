@@ -9,19 +9,20 @@ Menüpfade gelten für **Odoo 19 Community** nach Installation der OCA-Module
 
 ---
 
-## Schritt 0 — Entscheiden, was GoCardless bei dir ist
+## Schritt 0 — GoCardless ist bei dir ein Clearing-Konto
 
-Bevor du irgendetwas installierst:
+Du ziehst Lastschriften ein. Das ist **GoCardless Payments**, nicht
+Open Banking.
 
-| Frage | Ja | Folge |
-| --- | --- | --- |
-| Ziehst du echte Bankumsätze (Sparkasse, Commerzbank, …) über GoCardless / Nordigen? | Ja | Das ist **Bank Account Data**. OCA-Modul in Schritt 2 mitinstallieren. |
-| Nutzt du GoCardless nur für Lastschriften, und das Geld kommt auf dein Bankkonto? | Ja | **Kein** GoCardless-Journal. Payouts kommen über den Bankfeed. n8n-Workflow dafür später abschalten. |
-| Beides? | — | Nur A als Feed. B ignorieren. |
+- Journal `GC EUR` auf einem abstimmbaren Clearing-Konto.
+- Jeder Einzug erscheint dort (auch wenn er noch submitted ist, Betrag 0).
+- Schlägt der Einzug fehl, bleibt dieselbe Zeile und der Status/Betrag
+  wird nachgezogen (failed → 0).
+- Die Auszahlung an die Hausbank ist eine Minus-Zeile plus Gebühren.
+  Clearing = 0. Die Hausbank bucht den Eingang über ihren eigenen Feed
+  und ihr stimmt Payout gegen Bankeingang über Geldtransit ab.
 
-Neue GoCardless-BAD-Logins sind oft geschlossen. Wenn dein alter Zugang
-noch geht: weiter nutzen. Wenn nicht: in Schritt 6 die Bank per CAMT.053
-oder Ponto anbinden, nicht über n8n nachbauen.
+Nicht das OCA-Modul *GoCardless Bank Account Data* installieren.
 
 ---
 
@@ -38,9 +39,11 @@ Nichts in Git oder in n8n-Notes speichern. Nur ins Odoo-Provider-Formular.
      aus my.zen.com Payments)
    - Wallet-IBAN und Währung notieren
    - Optional: Account-UUID, falls du mehrere Wallets hast
-3. **GoCardless Bank Account Data** (nur wenn Schritt 0 = A)
-   - Secret ID + Secret Key aus dem bestehenden BAD-Konto
-   - IBAN des gekoppelten Bankkontos
+3. **GoCardless Payments**
+   - Developers → Access Token (Live)
+   - Webhook-Endpoint anlegen: `https://DEINE-ODOO/gocardless/payments/webhook`
+   - Endpoint-Secret notieren
+   - Events: payments (alle), payouts (paid, bounced), refunds
 4. **Jeeves**
    - Eine aktuelle Activity-CSV exportieren (*Activity and Exports*)
    - Spalten prüfen: Transaction ID, Posted Date, Merchant, Amount, Status
@@ -82,6 +85,7 @@ hängt nicht daran.
    - `account_reconcile_oca`
    - `account_statement_import_online_paypal`
    - `account_statement_import_online_zen`
+   - `account_statement_import_online_gocardless_payments`
    - `account_statement_import_jeeves`
    - `account_statement_import_sheet_file`
    - optional `account_statement_import_online_gocardless`
@@ -103,6 +107,7 @@ Einmalig, passend zu SKR03/SKR04 (Nummern sind Beispiele):
 | Zweck | SKR03 (Beispiel) | SKR04 (Beispiel) | Kontotyp |
 | --- | --- | --- | --- |
 | Geldtransit / interne Transfers | 1360 | 1460 | Umlaufvermögen, abstimmbar |
+| GoCardless Clearing | 1362 | 1462 | Umlaufvermögen, abstimmbar |
 | PayPal EUR | 1210 | 1810 | Bank / flüssige Mittel |
 | ZEN EUR | 1215 | 1815 | Bank / flüssige Mittel |
 | Hausbank | 1200 | 1800 | Bank |
@@ -138,6 +143,7 @@ Vorschlag für die Codes (kurz, eindeutig):
 | Journal | Code | Konto |
 | --- | --- | --- |
 | Hausbank EUR | BANK | 1200 / 1800 |
+| GoCardless Clearing | GC | 1362 / 1462 |
 | PayPal EUR | PPAL | 1210 / 1810 |
 | ZEN EUR | ZEN | 1215 / 1815 |
 | Jeeves Credit EUR | JCRD | 1665 / 3610 |
@@ -171,16 +177,24 @@ Zweite Währung = zweites Journal (`PPUSD`, `ZENUSD`, …).
    - API Base leer = Produktion
 4. Speichern.
 
-### 6c GoCardless Bank Account Data
+### 6c GoCardless Payments (Einzüge)
 
-1. Journal *Hausbank*, IBAN exakt wie bei der Bank.
-2. Bank Feeds = **Online (OCA)** → Provider **GoCardless**.
-3. Secret ID + Secret Key.
-4. Button **Select Bank Account Identifier** → Bank wählen → PSD2-Login.
-5. Im Chatter muss stehen, dass das Konto verknüpft ist.
+1. Journal *GoCardless Clearing*, Konto = Clearing aus Schritt 4
+   (abstimmbar, nicht die Hausbank).
+2. Bank Feeds = **Online (OCA)** → Provider **GoCardless Payments**.
+3. Provider öffnen:
+   - Password = Access Token
+   - Passphrase = Webhook-Secret
+   - API Base leer = Live, sonst `https://api-sandbox.gocardless.com`
+   - Intervall 1 Stunde (Fallback, falls ein Webhook ausfällt)
+4. In GoCardless den Webhook auf
+   `https://DEINE-ODOO/gocardless/payments/webhook` zeigen.
+5. Test: einen Einzug im Sandbox anlegen — Zeile mit `[submitted]` und
+   Betrag 0. Nach Confirm: dieselbe Zeile, Betrag +. Nach Fail:
+   dieselbe Zeile, `[failed]`, Betrag 0.
 
-Wenn der Consent fehlschlägt oder kein BAD-Zugang existiert: Bank Feeds
-wieder auf Datei-Import stellen und CAMT.053 nutzen (Schritt 8).
+Payouts nicht zusätzlich per n8n auf dieses Journal schreiben. Die
+Hausbank bekommt den Eingang aus ihrem eigenen Auszug.
 
 ### 6d Jeeves
 
@@ -262,8 +276,11 @@ Mindestens diese drei:
 
 - Betrag gleich, Gegenjournal das Zielkonto, Toleranz ±1 Tag
 - Gegenkonto: Geldtransit aus Schritt 4
-- Für PayPal→Bank, ZEN→Bank, Jeeves-Settlement je eine Regel oder eine
-  gemeinsame mit Betragsmatch
+- Für PayPal→Bank, ZEN→Bank, Jeeves-Settlement, **GoCardless-Payout→Bank**
+  je eine Regel oder eine gemeinsame mit Betragsmatch
+
+GoCardless-Payout: Zeile `[payout paid] POxxx` (−Netto) gegen den
+Bankeingang (+Netto). Gebührenzeile gegen den Gebührenaufwand.
 
 ### Jeeves-Kartenumsatz (optional)
 
@@ -302,7 +319,9 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 - [ ] Geldtransit-Konto ist abstimmbar
 - [ ] PayPal: 7-Tage-Pull ok, zweiter Pull ohne Duplikate
 - [ ] ZEN: nur SETTLED, IBAN/UUID stimmt, Vorzeichen richtig
-- [ ] Bank: BAD-Consent **oder** CAMT/CSV, nicht beides für denselben Zeitraum
+- [ ] GoCardless: Einzug sichtbar, Fail ändert dieselbe Zeile auf 0,
+      Payout + Gebühr setzen Clearing auf 0
+- [ ] Bank: CAMT/CSV oder anderer Bankfeed, nicht GoCardless BAD
 - [ ] Jeeves: eine CSV, Pending weg, Re-Import ohne Duplikate
 - [ ] PayPal-Auszahlung erscheint auf PayPal **und** Bank und geht über Geldtransit
 - [ ] Abstimmungmodell Gebühren und Transfers greifen
@@ -318,6 +337,9 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 | Provider-Feld am Journal fehlt | Journal-Typ ist nicht Bank |
 | PayPal pull leer | Sandbox-Key, oder Zeitraum älter als 3 Jahre |
 | ZEN 403 | Terminal-Key statt Transfers-Key |
+| GoCardless-Einzug fehlt | Access Token Live/Sandbox verdreht, oder Webhook-URL nicht erreichbar |
+| Fail erzeugt eine zweite Zeile | n8n schreibt noch parallel; nur der Payments-Provider darf dieses Journal füllen |
+| Clearing bleibt nach Payout offen | Gebührenzeile fehlt oder Bankeingang wurde zusätzlich ins GC-Journal importiert |
 | ZEN pull leer | Nur IN_PROGRESS im Zeitraum, oder falsche Account-UUID/IBAN |
 | Jede Zeile doppelt | n8n läuft noch parallel, oder einmal Datei **und** Online für denselben Feed |
 | Jeeves-Beträge positiv statt Aufwand | Datei hat bereits Minusbeträge und wurde zusätzlich invertiert — CSV-Header `Type` prüfen oder eine Zeile zum Nachstellen schicken |

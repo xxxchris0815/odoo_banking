@@ -14,6 +14,7 @@
         "account_statement_import_file",
         "account_statement_import_sheet_file",
         "account_statement_import_online_zen",
+        "account_statement_import_online_gocardless_payments",
         "account_statement_import_jeeves",
     ],
     "installable": True,

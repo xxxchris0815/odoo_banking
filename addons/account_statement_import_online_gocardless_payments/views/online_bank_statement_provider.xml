@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="online_bank_statement_provider_form_gc_payments" model="ir.ui.view">
+        <field name="name">online.bank.statement.provider.form.gocardless.payments</field>
+        <field name="model">online.bank.statement.provider</field>
+        <field
+            name="inherit_id"
+            ref="account_statement_import_online.online_bank_statement_provider_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <group
+                    string="GoCardless Payments"
+                    invisible="service != 'gocardless_payments'"
+                    name="gocardless_payments_help"
+                >
+                    <div colspan="2" class="text-muted">
+                        <p>
+                            Clearing journal for Direct Debit collections — not Open Banking.
+                            Password = Access Token (Live or Sandbox).
+                            Passphrase = Webhook endpoint secret.
+                            API Base empty = https://api.gocardless.com,
+                            sandbox = https://api-sandbox.gocardless.com.
+                        </p>
+                        <p>
+                            Webhook URL: /gocardless/payments/webhook
+                            Each collection appears immediately. Failed / cancelled /
+                            charged_back updates the same line (amount goes to 0).
+                            Payouts and deducted fees leave the journal so the balance
+                            returns to 0; the bank feed books the incoming payout.
+                        </p>
+                    </div>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>
