@@ -14,13 +14,26 @@
                     invisible="service != 'zen'"
                     name="zen_help"
                 >
+                    <field
+                        name="password"
+                        password="True"
+                        string="ZEN API-Key"
+                    />
+                    <field
+                        name="username"
+                        string="Account-UUID"
+                        placeholder="optional, wenn die Journal-IBAN eindeutig ist"
+                    />
+                    <field
+                        name="api_base"
+                        string="API-Adresse"
+                        placeholder="leer = https://api-services.zen.com"
+                    />
                     <div colspan="2" class="text-muted">
                         <p>
-                            Password = ZEN Transfers API key.
-                            Username = optional account UUID (otherwise the journal IBAN is used).
-                            API Base empty = production
-                            (https://api-services.zen.com); use
-                            https://api-services.zen-test.com for the test environment.
+                            API-Key der Transfers-API, nicht der Terminal-Key aus
+                            my.zen.com Payments. API-Adresse leer = Live;
+                            Test: https://api-services.zen-test.com
                         </p>
                     </div>
                 </group>

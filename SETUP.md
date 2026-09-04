@@ -188,8 +188,10 @@ Zweite Währung = zweites Journal (`PPUSD`, `ZENUSD`, …).
 3. **Konfiguration → Journale** → Journal `GC` öffnen (Typ Bank,
    Buchungskonto = GoCardless-Clearing).
 4. Feld **Bankauszüge / Bank Feeds** = **Online (OCA)**.
-5. Darunter Provider **GoCardless Payments** wählen (nicht das OCA
-   „GoCardless“ ohne *Payments* — das ist Open Banking).
+5. Im Provider-Formular das Feld **Service** auf **GoCardless Payments**
+   stellen — nicht PayPal.com und nicht das OCA-„GoCardless“ (Open Banking).
+   Client ID / Secret gehören nur zu PayPal; die erscheinen, wenn Service
+   falsch auf PayPal.com steht.
 6. Speichern. Odoo legt den Provider an.
 7. Den Provider-Namen anklicken (oder **Konfiguration → Online Bank
    Statement Providers** → den Eintrag zum Journal `GC` öffnen).
