@@ -1,0 +1,18 @@
+# Odoo 19 Community banking stack (OCA).
+# Install these addons on the Odoo addons path, then install this repo's addons.
+#
+# Preferred: clone the 19.0 branches next to this repo:
+#   git clone --branch 19.0 --depth 1 https://github.com/OCA/bank-statement-import
+#   git clone --branch 19.0 --depth 1 https://github.com/OCA/account-reconcile
+#
+# Alternative: PyPI wheels for the same modules.
+
+odoo-addon-account-statement-import-base==19.0.*
+odoo-addon-account-statement-import-file==19.0.*
+odoo-addon-account-statement-import-online==19.0.*
+odoo-addon-account-statement-import-online-paypal==19.0.*
+odoo-addon-account-statement-import-online-gocardless==19.0.*
+odoo-addon-account-statement-import-sheet-file==19.0.*
+odoo-addon-account-reconcile-oca==19.0.*
+odoo-addon-account-statement-base==19.0.*
+odoo-addon-account-statement-import-file-reconcile-oca==19.0.*

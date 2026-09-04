@@ -1,0 +1,6 @@
+This project is licensed under the GNU Affero General Public License v3.0 or later.
+
+The custom Odoo addons inherit the OCA bank-statement-import stack and must
+remain AGPL-3 compatible.
+
+Full license text: https://www.gnu.org/licenses/agpl-3.0.html

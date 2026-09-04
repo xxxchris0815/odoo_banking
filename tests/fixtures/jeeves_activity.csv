@@ -1,0 +1,5 @@
+Transaction ID,Posted Date,Merchant,Amount,Currency,Status,Type,Memo
+txn-100,2026-07-02,AWS,120.00,EUR,Completed,Purchase,Cloud
+txn-101,2026-07-03,Hotel Berlin,80.50,EUR,Pending,Authorization,Hold
+txn-102,2026-07-04,Acme Refund,25.00,EUR,Completed,Refund,Partial
+txn-103,2026-07-05,Figma,15,EUR,Completed,Charge,Design
