@@ -8,16 +8,17 @@
             ref="account_statement_import_online.online_bank_statement_provider_form"
         />
         <field name="arch" type="xml">
-            <xpath expr="//form" position="inside">
+            <xpath expr="//group[@name='main']" position="inside">
                 <group
-                    string="ZEN.COM"
+                    name="zen"
+                    string="Credentials"
                     invisible="service != 'zen'"
-                    name="zen_help"
                 >
                     <field
                         name="password"
                         password="True"
                         string="ZEN API-Key"
+                        required="service == 'zen'"
                     />
                     <field
                         name="username"
@@ -29,13 +30,6 @@
                         string="API-Adresse"
                         placeholder="leer = https://api-services.zen.com"
                     />
-                    <div colspan="2" class="text-muted">
-                        <p>
-                            API-Key der Transfers-API, nicht der Terminal-Key aus
-                            my.zen.com Payments. API-Adresse leer = Live;
-                            Test: https://api-services.zen-test.com
-                        </p>
-                    </div>
                 </group>
             </xpath>
         </field>

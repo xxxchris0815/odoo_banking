@@ -8,16 +8,17 @@
             ref="account_statement_import_online.online_bank_statement_provider_form"
         />
         <field name="arch" type="xml">
-            <xpath expr="//form" position="inside">
+            <xpath expr="//group[@name='main']" position="inside">
                 <group
-                    string="GoCardless Payments"
+                    name="gocardless_payments"
+                    string="Credentials"
                     invisible="service != 'gocardless_payments'"
-                    name="gocardless_payments_help"
                 >
                     <field
                         name="password"
                         password="True"
                         string="Access Token"
+                        required="service == 'gocardless_payments'"
                     />
                     <field
                         name="passphrase"
@@ -29,15 +30,6 @@
                         string="API-Adresse"
                         placeholder="leer = Live (api.gocardless.com)"
                     />
-                    <div colspan="2" class="text-muted">
-                        <p>
-                            Access Token aus dem GoCardless-Dashboard (Developers).
-                            Webhook-Secret vom Endpoint
-                            https://DEINE-DOMAIN/gocardless/payments/webhook
-                            API-Adresse leer lassen für Live; Sandbox:
-                            https://api-sandbox.gocardless.com
-                        </p>
-                    </div>
                 </group>
             </xpath>
         </field>
