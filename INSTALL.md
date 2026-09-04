@@ -167,6 +167,43 @@ vor dieser Route).
 
 ---
 
+## Apps-Liste aktualisiert, `banking_community` fehlt
+
+Die Liste neu laden reicht nicht, wenn Odoo den Ordner nicht als Modul
+sieht. `/mnt/extra-addons/odoo_banking` ist **kein** Modul — das Manifest
+liegt in `odoo_banking/addons/banking_community/`.
+
+**Im Container** (nicht nur auf dem Host) prüfen:
+
+```bash
+ls /mnt/extra-addons/odoo_banking/addons/banking_community/__manifest__.py
+ls /mnt/extra-addons/account-reconcile/account_reconcile_oca/__manifest__.py
+ls /mnt/extra-addons/bank-statement-import/account_statement_import_online/__manifest__.py
+```
+
+Fehlt die erste Datei: Klon liegt nicht im gemounteten Volume, oder du
+stehst auf dem Host-Pfad statt im Container.
+
+Sind die Dateien da, muss `addons_path` **genau so** aussehen (und Odoo
+danach neu gestartet werden, nicht nur Apps-Liste):
+
+```ini
+addons_path = /mnt/extra-addons,/mnt/extra-addons/commission,/mnt/extra-addons/account-reconcile,/mnt/extra-addons/bank-statement-import,/mnt/extra-addons/odoo_banking/addons
+```
+
+Ob der laufende Prozess das schon hat:
+
+```bash
+ps aux | grep -E 'odoo|odoo-bin'
+# oder in der Odoo-Shell / Log beim Start: addons paths
+```
+
+Dann Container/Dienst **neu starten**. Erst danach Entwicklermodus →
+Apps-Liste aktualisieren. Suche nach **Community Banking Stack**, Filter
+*Apps* aus. Technischer Name: `banking_community`.
+
+---
+
 ## Wenn das Modul nicht auftaucht
 
 | Symptom | Ursache |
