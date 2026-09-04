@@ -459,26 +459,24 @@ class GoCardlessPaymentsClient:
     def iter_payments_by_charge_date(
         self, date_since: datetime | date, date_until: datetime | date
     ) -> list[dict[str, Any]]:
+        # Do not send include= here — GoCardless 400s on include + charge_date.
         return self._paginate(
             "payments",
             "payments",
             {
                 "charge_date[gte]": _as_date(date_since),
                 "charge_date[lte]": _as_date(date_until),
-                "include": PAYMENT_INCLUDE,
             },
         )
 
     def iter_payments_for_payout(self, payout_id: str) -> list[dict[str, Any]]:
         if not payout_id:
             return []
+        # Do not send include= here — GoCardless 400s on include + payout.
         return self._paginate(
             "payments",
             "payments",
-            {
-                "payout": payout_id,
-                "include": PAYMENT_INCLUDE,
-            },
+            {"payout": payout_id},
         )
 
     def iter_payouts(self, date_since: datetime | date, date_until: datetime | date) -> list[dict[str, Any]]:

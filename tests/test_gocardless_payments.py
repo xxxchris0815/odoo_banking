@@ -219,6 +219,11 @@ def test_client_paginates_payments_and_builds_lines():
     assert payment_urls
     assert all("customer_bank_account" not in url for url in payment_urls)
     assert any("include=customer" in url and "mandate" in url for url in payment_urls)
+    assert all(
+        "include=" not in url
+        for url in payment_urls
+        if "payout=" in url or "charge_date" in url
+    )
     assert any("created_at" in url and "gte" in url.replace("%5B", "[").replace("%5D", "]") or "created_at" in url for url in calls)
 
 
@@ -345,6 +350,36 @@ def test_old_collections_are_pulled_via_their_payout():
     assert collection["amount"] == 100.0
     assert collection["partner_name"] == "Test Client"
     assert "INV-9" in collection["payment_ref"]
+
+
+def test_payout_and_charge_date_queries_omit_include():
+    payout = {
+        "id": "PO99",
+        "amount": 10000,
+        "deducted_fees": 0,
+        "currency": "EUR",
+        "status": "paid",
+        "arrival_date": "2026-09-04",
+        "created_at": "2026-09-04T08:00:00.000Z",
+    }
+    calls = []
+
+    def http_get(url, headers):
+        calls.append(url)
+        if "/payouts" in url:
+            return 200, {"payouts": [payout], "meta": {"cursors": {}}}
+        if "/refunds" in url:
+            return 200, {"refunds": [], "meta": {"cursors": {}}}
+        if "/payments" in url:
+            return 200, {"payments": [], "meta": {"cursors": {}}}
+        return 404, url
+
+    client = GoCardlessPaymentsClient("tok", http_get=http_get, status_lookback_days=1)
+    client.obtain_statement_lines(datetime(2026, 9, 4), datetime(2026, 9, 5))
+    payout_urls = [url for url in calls if "/payments" in url and "payout=" in url]
+    charge_urls = [url for url in calls if "/payments" in url and "charge_date" in url]
+    assert payout_urls and all("include=" not in url for url in payout_urls)
+    assert charge_urls and all("include=" not in url for url in charge_urls)
 
 
 def test_payout_webhook_also_imports_the_collections():
