@@ -9,6 +9,82 @@ Python-Paket `requests` ist in Odoo schon dabei.
 
 ---
 
+## Docker: was liegt wo
+
+`/mnt/extra-addons` und `addons_path = /mnt/extra-addons,/mnt/extra-addons/commission`
+sind Pfade **im Container**. Die Dateien liegen auf dem Host und sind
+nur eingehängt. Die `odoo.conf` oft ebenfalls.
+
+| Sache | Im Container | Anpassen auf |
+| --- | --- | --- |
+| Extra-Addons | `/mnt/extra-addons` | Host-Ordner, der dorthin gemountet ist |
+| `commission` | `/mnt/extra-addons/commission` | schon vorhanden, nicht anfassen |
+| Neue Repos | `/mnt/extra-addons/account-reconcile` usw. | dieselben Ordner auf dem Host anlegen |
+| `addons_path` | `/etc/odoo/odoo.conf` oder Startkommando | die **Host-Datei** bzw. `docker-compose.yml`, nicht nur im laufenden Container |
+
+### 1. Host-Ordner und Conf finden
+
+Im Verzeichnis mit deiner `docker-compose.yml`:
+
+```bash
+docker compose ps
+docker compose exec odoo cat /etc/odoo/odoo.conf
+docker inspect "$(docker compose ps -q odoo)" --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
+```
+
+Service heißt bei dir vielleicht nicht `odoo` — Namen aus `ps` nehmen.
+
+Du brauchst zwei Zeilen aus den Mounts:
+
+- Host-Pfad → `/mnt/extra-addons`  → hier klonen
+- Host-Pfad → `/etc/odoo/odoo.conf` → hier `addons_path` ändern  
+  (fehlt der Mount, steht der Pfad in der `command:` der Compose-Datei)
+
+### 2. Auf dem Host klonen
+
+Nicht `cd /mnt/extra-addons` auf dem Host, wenn es den Ordner dort nicht
+gibt. Den **Source**-Pfad aus `docker inspect` nehmen, z. B.
+`/data/odoo/addons` oder `./extra-addons`:
+
+```bash
+cd /DER/HOST/PFAD/DER/NACH/mnt/extra-addons/ZEIGT
+
+git clone --branch 19.0 --depth 1 https://github.com/OCA/account-reconcile
+git clone --branch 19.0 --depth 1 https://github.com/OCA/bank-statement-import
+git clone --branch cursor/community-banking-stack-f606 https://github.com/xxxchris0815/odoo_banking
+```
+
+Im Container muss danach gelten:
+
+```bash
+docker compose exec odoo ls /mnt/extra-addons/odoo_banking/addons/banking_community/__manifest__.py
+docker compose exec odoo ls /mnt/extra-addons/account-reconcile/account_reconcile_oca/__manifest__.py
+```
+
+### 3. `addons_path` auf dem Host erweitern
+
+In der gemounteten Conf (oder in `command:` / `--addons-path=`):
+
+```ini
+addons_path = /mnt/extra-addons,/mnt/extra-addons/commission,/mnt/extra-addons/account-reconcile,/mnt/extra-addons/bank-statement-import,/mnt/extra-addons/odoo_banking/addons
+```
+
+Die Pfade bleiben Container-Pfade. Nur die Datei, die du editierst, liegt
+auf dem Host. Nur im Container `vi /etc/odoo/odoo.conf` ändern geht verloren,
+wenn die Conf nicht gemountet ist.
+
+### 4. Container neu starten, dann Apps-Liste
+
+```bash
+docker compose restart odoo
+```
+
+Danach in Odoo: Entwicklermodus → Apps-Liste aktualisieren →
+**Community Banking Stack**. Nur die Liste neu laden ohne Restart reicht
+nicht, der Prozess hat den alten `addons_path` noch im Speicher.
+
+---
+
 ## 1. Wer Odoo wirklich startet
 
 Es braucht **keinen** Linux-User namens `odoo`. Das war nur ein
