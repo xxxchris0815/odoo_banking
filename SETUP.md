@@ -322,6 +322,9 @@ Zwei Wege, nimm **einen** pro Einzug, nicht beide:
 2. Im Journal `GC` steht die **Einzugszeile**
    `[confirmed] Kundenname — INV-…` (`PMxxx`) mit +Betrag, Partner und
    E-Mail/IBAN in der Notiz. Das ist die Zeile gegen die Rechnung.
+   Sie hängt am **Einzugsdatum** (charge date), nicht am Payout-Tag.
+   Im Abstimmen-Bildschirm alle offenen Zeilen des Journals anzeigen,
+   nicht nur das Statement vom Auszahlungstag.
 3. Dashboard → GC → **Abstimmen** → offene Rechnung desselben Partners.
    Odoo matcht über Partner, Referenz und Betrag.
 4. Rechnung = bezahlt, Clearing = belastet. Ein Buchungssatz.

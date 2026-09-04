@@ -299,6 +299,86 @@ def test_included_linked_customers_avoid_extra_gets():
     assert not any("/mandates/" in url for url in calls)
 
 
+def test_old_collections_are_pulled_via_their_payout():
+    """A payout today must still yield the Direct Debits that funded it."""
+    old_payment = _payment(
+        id="PMOLD",
+        status="paid_out",
+        created_at="2025-01-02T10:00:00.000Z",
+        charge_date="2025-01-04",
+        reference="INV-9",
+        links={"mandate": "MD1", "customer": "CU1"},
+    )
+    payout = {
+        "id": "PO99",
+        "amount": 9700,
+        "deducted_fees": 300,
+        "currency": "EUR",
+        "status": "paid",
+        "arrival_date": "2026-09-04",
+        "created_at": "2026-09-04T08:00:00.000Z",
+        "reference": "today",
+    }
+
+    def http_get(url, headers):
+        if "/payouts" in url:
+            return 200, {"payouts": [payout], "meta": {"cursors": {}}}
+        if "/refunds" in url:
+            return 200, {"refunds": [], "meta": {"cursors": {}}}
+        if "/payments" in url and "payout=PO99" in url:
+            return 200, {"payments": [old_payment], "meta": {"cursors": {}}}
+        if "/payments" in url:
+            return 200, {"payments": [], "meta": {"cursors": {}}}
+        if "customers/CU1" in url:
+            return 200, {
+                "customers": {"given_name": "Test", "family_name": "Client"}
+            }
+        return 404, url
+
+    client = GoCardlessPaymentsClient("tok", http_get=http_get, status_lookback_days=10)
+    lines = client.obtain_statement_lines(datetime(2026, 9, 4), datetime(2026, 9, 5))
+    ids = [line["unique_import_id"] for line in lines]
+    assert "gc:pay:PMOLD" in ids
+    assert "gc:payout:PO99" in ids
+    assert "gc:payout:PO99:fees" in ids
+    collection = next(line for line in lines if line["unique_import_id"] == "gc:pay:PMOLD")
+    assert collection["amount"] == 100.0
+    assert collection["partner_name"] == "Test Client"
+    assert "INV-9" in collection["payment_ref"]
+
+
+def test_payout_webhook_also_imports_the_collections():
+    payout = {
+        "id": "PO1",
+        "amount": 10000,
+        "deducted_fees": 0,
+        "currency": "EUR",
+        "status": "paid",
+        "arrival_date": "2026-09-04",
+        "created_at": "2026-09-04T08:00:00.000Z",
+    }
+
+    def http_get(url, headers):
+        if "payouts/PO1" in url:
+            return 200, {"payouts": payout}
+        if "/payments" in url and "payout=PO1" in url:
+            return 200, {
+                "payments": [_payment(status="paid_out")],
+                "meta": {"cursors": {}},
+            }
+        if "customers/CU1" in url:
+            return 200, {"customers": {"company_name": "Acme GmbH"}}
+        return 404, url
+
+    client = GoCardlessPaymentsClient("tok", http_get=http_get)
+    lines = client.lines_for_event(
+        {"resource_type": "payouts", "action": "paid", "links": {"payout": "PO1"}}
+    )
+    ids = [line["unique_import_id"] for line in lines]
+    assert "gc:payout:PO1" in ids
+    assert "gc:pay:PM123" in ids
+
+
 def test_client_event_failed_payment():
     def http_get(url, headers):
         if "payments/PM123" in url:

@@ -1,7 +1,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import logging
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 
 import requests
 
@@ -16,6 +16,20 @@ from ..lib.gocardless_payments import (
 )
 
 _logger = logging.getLogger(__name__)
+
+_BSL_CREATE_KEYS = {
+    "date",
+    "payment_ref",
+    "ref",
+    "unique_import_id",
+    "amount",
+    "partner_name",
+    "partner_id",
+    "narration",
+    "account_number",
+    "transaction_type",
+    "journal_id",
+}
 
 
 def _requests_get(url, headers):
@@ -60,18 +74,57 @@ class OnlineBankStatementProviderGoCardlessPayments(models.Model):
             wanted = self._gc_client().obtain_statement_lines(date_since, date_until)
         except (GoCardlessConfigError, GoCardlessHTTPError) as error:
             raise UserError(str(error)) from error
-        return self._gc_upsert_lines(wanted)
+        return self._gc_upsert_lines(wanted, date_since, date_until)
 
-    def _gc_upsert_lines(self, wanted_lines):
+    def _gc_as_naive_datetime(self, value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None) if value.tzinfo else value
+        if isinstance(value, date):
+            return datetime.combine(value, datetime.min.time())
+        return datetime.fromisoformat(str(value)[:19])
+
+    def _gc_date_in_window(self, line_date, date_since, date_until):
+        when = self._gc_as_naive_datetime(line_date)
+        since = self._gc_as_naive_datetime(date_since)
+        until = self._gc_as_naive_datetime(date_until)
+        if when is None or since is None or until is None:
+            return True
+        return since <= when < until
+
+    def _gc_create_new_line(self, values):
+        """Create a collection even if OCA would drop it for being out of day."""
+        create_vals = {
+            key: value
+            for key, value in values.items()
+            if key in _BSL_CREATE_KEYS and value is not False
+        }
+        create_vals["journal_id"] = self.journal_id.id
+        create_vals.setdefault("amount", values.get("amount") or 0.0)
+        create_vals.setdefault(
+            "payment_ref", values.get("payment_ref") or values.get("ref") or "/"
+        )
+        self.env["account.bank.statement.line"].create(create_vals)
+        _logger.info(
+            "Created GoCardless line %s %s amount %s",
+            create_vals.get("unique_import_id"),
+            create_vals.get("payment_ref"),
+            create_vals.get("amount"),
+        )
+
+    def _gc_upsert_lines(self, wanted_lines, date_since=None, date_until=None):
         """Update existing collection lines when GoCardless changes status.
 
-        New ids go through the normal OCA statement creator. Existing ids are
-        written in place so a failed Direct Debit does not create a duplicate.
+        Lines whose charge date sits in the current OCA day-window go through
+        the normal statement creator. Older collections belonging to a payout
+        in this window are created here — OCA would otherwise discard them.
         """
         self.ensure_one()
         journal = self.journal_id
         journal_currency = journal.currency_id or journal.company_id.currency_id
         new_lines = []
+        created = 0
         for values in wanted_lines:
             values = dict(values)
             currency_code = values.pop("currency_code", None)
@@ -84,9 +137,25 @@ class OnlineBankStatementProviderGoCardlessPayments(models.Model):
             values = self._gc_prepare_line_values(values)
             existing = self._gc_find_statement_line(values.get("unique_import_id"))
             if not existing:
+                if (
+                    date_since is not None
+                    and date_until is not None
+                    and not self._gc_date_in_window(
+                        values.get("date"), date_since, date_until
+                    )
+                ):
+                    self._gc_create_new_line(values)
+                    created += 1
+                    continue
                 new_lines.append(values)
                 continue
             self._gc_write_existing_line(existing, values)
+        _logger.info(
+            "GoCardless upsert: %s new in-window, %s created out-of-window, %s wanted",
+            len(new_lines),
+            created,
+            len(wanted_lines),
+        )
         return new_lines, {}
 
     def _gc_prepare_line_values(self, values):

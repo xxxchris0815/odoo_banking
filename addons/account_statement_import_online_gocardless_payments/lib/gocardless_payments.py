@@ -76,6 +76,22 @@ def _as_iso(value: datetime | date) -> str:
     return dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _as_date(value: datetime | date) -> str:
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    return value.isoformat()
+
+
+def _merge_by_id(*groups: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    for group in groups:
+        for row in group:
+            row_id = row.get("id")
+            if row_id:
+                by_id[row_id] = row
+    return list(by_id.values())
+
+
 def payment_amount(payment: dict[str, Any]) -> float:
     """Economic amount on the clearing journal for the current status."""
     major = abs(minor_to_major(payment.get("amount") or 0, payment.get("currency") or "EUR"))
@@ -440,6 +456,31 @@ class GoCardlessPaymentsClient:
             },
         )
 
+    def iter_payments_by_charge_date(
+        self, date_since: datetime | date, date_until: datetime | date
+    ) -> list[dict[str, Any]]:
+        return self._paginate(
+            "payments",
+            "payments",
+            {
+                "charge_date[gte]": _as_date(date_since),
+                "charge_date[lte]": _as_date(date_until),
+                "include": PAYMENT_INCLUDE,
+            },
+        )
+
+    def iter_payments_for_payout(self, payout_id: str) -> list[dict[str, Any]]:
+        if not payout_id:
+            return []
+        return self._paginate(
+            "payments",
+            "payments",
+            {
+                "payout": payout_id,
+                "include": PAYMENT_INCLUDE,
+            },
+        )
+
     def iter_payouts(self, date_since: datetime | date, date_until: datetime | date) -> list[dict[str, Any]]:
         return self._paginate(
             "payouts",
@@ -465,10 +506,17 @@ class GoCardlessPaymentsClient:
         date_since: datetime | date,
         date_until: datetime | date,
     ) -> list[dict[str, Any]]:
-        lines: list[dict[str, Any]] = []
-        for payment in self.iter_payments(date_since, date_until):
-            lines.append(self._line_from_payment(payment))
-        for payout in self.iter_payouts(date_since, date_until):
+        payouts = self.iter_payouts(date_since, date_until)
+        payments = _merge_by_id(
+            self.iter_payments(date_since, date_until),
+            self.iter_payments_by_charge_date(date_since, date_until),
+            *(
+                self.iter_payments_for_payout(payout.get("id") or "")
+                for payout in payouts
+            ),
+        )
+        lines = [self._line_from_payment(payment) for payment in payments]
+        for payout in payouts:
             lines.extend(statement_lines_from_payout(payout))
         for refund in self.iter_refunds(date_since, date_until):
             lines.append(self._line_from_refund(refund))
@@ -486,7 +534,12 @@ class GoCardlessPaymentsClient:
             return [self._line_from_payment(payment, event_detail=detail_text)]
         if resource_type == "payouts" and links.get("payout"):
             payout = self.get_payout(links["payout"])
-            return statement_lines_from_payout(payout) if payout else []
+            if not payout:
+                return []
+            lines = statement_lines_from_payout(payout)
+            for payment in self.iter_payments_for_payout(payout.get("id") or ""):
+                lines.append(self._line_from_payment(payment))
+            return lines
         if resource_type == "refunds" and links.get("refund"):
             refund = self.get_refund(links["refund"])
             return [self._line_from_refund(refund)] if refund else []
