@@ -9,48 +9,55 @@ Python-Paket `requests` ist in Odoo schon dabei.
 
 ---
 
-## 1. Addons-Pfad finden
+## 1. Wer Odoo wirklich startet
 
-Auf dem Server:
+Es braucht **keinen** Linux-User namens `odoo`. Das war nur ein
+Beispielname. Nimm den Account, mit dem der Prozess schon läuft — oft
+dein eigener, `www-data`, `ubuntu`, oder ein Docker-User.
 
 ```bash
-# läuft Odoo als Dienst?
-ps aux | grep -E 'odoo|openerp'
-
-# typische Konfig
-ls /etc/odoo/odoo.conf /opt/odoo/odoo.conf 2>/dev/null
+ps aux | grep -E 'odoo|odoo-bin'
 ```
 
-In der Datei die Zeile `addons_path` notieren. Alles, was du gleich
-klonen, muss **dort als Verzeichnis** stehen — nicht nur das Repo-Root,
-sondern bei uns `…/odoo_banking/addons`.
+Die erste Spalte ist der Systemuser. Die Kommandozeile zeigt oft schon
+`-c /pfad/zu/odoo.conf` oder `--addons-path=…`.
+
+Konfig suchen, falls sie nicht in der Prozesszeile steht:
+
+```bash
+ls /etc/odoo/odoo.conf /etc/odoo.conf ./odoo.conf ~/odoo.conf 2>/dev/null
+```
+
+In der Datei `addons_path` notieren. Neue Repos müssen als Ordner in
+diesem Pfad landen. Bei uns zählt `…/odoo_banking/addons`, nicht das
+Repo-Root.
 
 ---
 
 ## 2. Repos klonen
 
-Lege die drei Quellen **neben** den Core-Addons, nicht nach
-`odoo/addons` (das überschreibt Updates).
+Als **dein** User (oder root), in einen Ordner, den Odoo lesen darf.
+Nicht nach `odoo/addons` legen (das überschreibt Updates).
 
 ```bash
-sudo -u odoo mkdir -p /opt/odoo/extra
-cd /opt/odoo/extra
+mkdir -p "$HOME/odoo-extra"
+cd "$HOME/odoo-extra"
 
-sudo -u odoo git clone --branch 19.0 --depth 1 \
+git clone --branch 19.0 --depth 1 \
   https://github.com/OCA/account-reconcile
 
-sudo -u odoo git clone --branch 19.0 --depth 1 \
+git clone --branch 19.0 --depth 1 \
   https://github.com/OCA/bank-statement-import
 
-sudo -u odoo git clone --branch cursor/community-banking-stack-f606 \
+git clone --branch cursor/community-banking-stack-f606 \
   https://github.com/xxxchris0815/odoo_banking
 ```
 
-Benutzer `odoo` und Basis `/opt/odoo` anpassen, wenn bei dir anders.
+`$HOME/odoo-extra` kannst du durch jeden bestehenden Extra-Addons-Ordner
+ersetzen, den du in `addons_path` schon nutzt.
 
-`account-reconcile` und `bank-statement-import` **sind selbst** Addons-Pfade
-(jedes Unterverzeichnis ist ein Modul). Bei `odoo_banking` ist der
-Addons-Pfad das Unterverzeichnis `addons/`.
+`account-reconcile` und `bank-statement-import` **sind selbst**
+Addons-Pfade. Bei `odoo_banking` ist der Addons-Pfad `addons/`.
 
 ---
 
@@ -60,22 +67,27 @@ Addons-Pfad das Unterverzeichnis `addons/`.
 
 Bestehenden `addons_path` **ergänzen**, nicht ersetzen:
 
-```ini
-addons_path = /usr/lib/python3/dist-packages/odoo/addons,/opt/odoo/extra/account-reconcile,/opt/odoo/extra/bank-statement-import,/opt/odoo/extra/odoo_banking/addons
-```
-
-Debian-Paket oft:
+Den **bestehenden** Core-Pfad stehen lassen und nur die drei neuen
+Ordner anhängen. Beispiel, wenn du nach `$HOME/odoo-extra` geklont hast:
 
 ```ini
-addons_path = /usr/lib/python3/dist-packages/odoo/addons,/var/lib/odoo/extra/account-reconcile,/var/lib/odoo/extra/bank-statement-import,/var/lib/odoo/extra/odoo_banking/addons
+addons_path = /usr/lib/python3/dist-packages/odoo/addons,/home/DEINUSER/odoo-extra/account-reconcile,/home/DEINUSER/odoo-extra/bank-statement-import,/home/DEINUSER/odoo-extra/odoo_banking/addons
 ```
 
-Dann:
+`DEINUSER` durch deinen Login ersetzen. Wenn Odoo schon einen Extra-Pfad
+hat, die drei Klone dorthin legen und nur fehlende Einträge ergänzen.
+
+Odoo neu starten — je nachdem, wie du es betreibst:
 
 ```bash
+# systemd (Name mit tab oder systemctl list-units | grep -i odoo finden)
 sudo systemctl restart odoo
-# oder
 sudo systemctl restart odoo19
+
+# Docker
+docker compose restart
+
+# manuell gestartet: Prozess beenden und dasselbe Kommando wieder ausführen
 ```
 
 ### Docker / Compose
@@ -125,11 +137,9 @@ Oder auf der Konsole (Datenbankname ersetzen, Odoo vorher stoppen oder
 `--http-port` frei wählen):
 
 ```bash
-sudo -u odoo odoo \
-  -c /etc/odoo/odoo.conf \
-  -d DEINE_DATENBANK \
-  -i banking_community \
-  --stop-after-init
+# dasselbe Binary und dieselbe conf, mit der Odoo schon läuft
+odoo -c /pfad/zu/odoo.conf -d DEINE_DATENBANK \
+  -i banking_community --stop-after-init
 ```
 
 Danach den normalen Odoo-Dienst wieder starten.
@@ -179,9 +189,9 @@ vor dieser Route).
 Pfad testen:
 
 ```bash
-ls /opt/odoo/extra/odoo_banking/addons/banking_community/__manifest__.py
-ls /opt/odoo/extra/account-reconcile/account_reconcile_oca/__manifest__.py
-ls /opt/odoo/extra/bank-statement-import/account_statement_import_online/__manifest__.py
+ls "$HOME/odoo-extra/odoo_banking/addons/banking_community/__manifest__.py"
+ls "$HOME/odoo-extra/account-reconcile/account_reconcile_oca/__manifest__.py"
+ls "$HOME/odoo-extra/bank-statement-import/account_statement_import_online/__manifest__.py"
 ```
 
 Alle drei Dateien müssen existieren, dann Odoo neu starten und die

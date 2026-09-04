@@ -58,8 +58,8 @@ Die Varianten (Debian, Docker, Odoo.sh) stehen in [INSTALL.md](INSTALL.md).
 Kurz auf dem Host:
 
 ```bash
-mkdir -p /opt/odoo/extra
-cd /opt/odoo/extra
+mkdir -p "$HOME/odoo-extra"
+cd "$HOME/odoo-extra"
 
 git clone --branch 19.0 --depth 1 https://github.com/OCA/account-reconcile
 git clone --branch 19.0 --depth 1 https://github.com/OCA/bank-statement-import
@@ -74,17 +74,9 @@ aktualisieren.
 
 ## Schritt 3 — Module in Odoo installieren
 
-1. Apps → Filter *Apps* entfernen (auch *Technisch* anzeigen).
-2. Installieren:
-   - `account_reconcile_oca`
-   - `account_statement_import_online_paypal`
-   - `account_statement_import_online_zen`
-   - `account_statement_import_online_gocardless_payments`
-   - `account_statement_import_jeeves`
-   - `account_statement_import_sheet_file`
-   - optional `account_statement_import_online_gocardless`
-   - optional `account_statement_import_camt`
-   - zum Schluss `banking_community` (zieht die Pflicht-Abhängigkeiten)
+1. Entwicklermodus an, Apps → Apps-Liste aktualisieren.
+2. **Community Banking Stack** (`banking_community`) installieren — zieht
+   die Pflichtmodule mit. Optional zusätzlich `account_statement_import_camt`.
 3. Einstellungen → Benutzer → dein Benutzer:
    - Haken **Vollständige Buchhaltungsfunktionen anzeigen**
    - neu einloggen
