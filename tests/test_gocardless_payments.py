@@ -326,6 +326,13 @@ def test_future_instalments_stay_out_of_an_earlier_pull():
         datetime(2026, 8, 30),
         datetime(2026, 9, 5),
         payout_payment_ids={"PMFUT"},
+    ) is False
+    paid = _payment(id="PMOLD", status="paid_out", charge_date="2026-09-02")
+    assert payment_in_pull_window(
+        paid,
+        datetime(2026, 9, 4),
+        datetime(2026, 9, 5),
+        payout_payment_ids={"PMOLD"},
     )
 
 
@@ -354,8 +361,8 @@ def test_old_collections_are_pulled_via_their_payout():
         if "/payout_items" in url:
             return 200, {
                 "payout_items": [
-                    {"type": "payment", "links": {"payment": "PMOLD"}},
-                    {"type": "gocardless_fee", "links": {"payout": "PO99"}},
+                    {"type": "payment_paid_out", "links": {"payment": "PMOLD"}},
+                    {"type": "gocardless_fee", "links": {"payment": "PMOLD"}},
                 ],
                 "meta": {"cursors": {}},
             }
@@ -413,7 +420,7 @@ def test_payout_collections_use_payout_items_not_payment_filters():
     client.obtain_statement_lines(datetime(2026, 9, 4), datetime(2026, 9, 5))
     assert any("/payout_items" in url and "payout=PO99" in url for url in calls)
     assert not any("/payments" in url and "payout=" in url for url in calls)
-    assert not any("charge_date" in url for url in calls)
+    assert any("charge_date" in url for url in calls)
 
 
 def test_invalid_payout_items_filter_does_not_abort_payment_pull():
@@ -468,7 +475,9 @@ def test_payout_webhook_also_imports_the_collections():
             return 200, {"payouts": payout}
         if "/payout_items" in url:
             return 200, {
-                "payout_items": [{"type": "payment", "links": {"payment": "PM123"}}],
+                "payout_items": [
+                    {"type": "payment_paid_out", "links": {"payment": "PM123"}}
+                ],
                 "meta": {"cursors": {}},
             }
         if "payments/PM123" in url:

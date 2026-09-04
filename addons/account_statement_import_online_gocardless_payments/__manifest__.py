@@ -1,6 +1,6 @@
 {
     "name": "Online Bank Statements: GoCardless Payments",
-    "version": "19.0.1.9.0",
+    "version": "19.0.1.10.0",
     "category": "Accounting",
     "summary": "GoCardless Direct Debit clearing journal (collections, failures, payouts)",
     "author": "Expect Magic",

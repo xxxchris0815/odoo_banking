@@ -114,13 +114,22 @@ def payment_in_pull_window(
     in October/November). Those must not appear on a September pull.
     """
     pay_id = payment.get("id") or ""
-    if pay_id and payout_payment_ids and pay_id in payout_payment_ids:
-        return True
     charge = _parse_datetime(payment.get("charge_date")) or _parse_datetime(
         payment.get("created_at")
     )
     since = _naive_dt(date_since)
     until = _naive_dt(date_until)
+    if pay_id and payout_payment_ids and pay_id in payout_payment_ids:
+        # Same payment id can be retried later; don't pull the new charge date
+        # just because an older failed attempt sat in this payout.
+        if (
+            charge
+            and until
+            and charge >= until
+            and (payment.get("status") or "") not in COLLECTED_STATUSES
+        ):
+            return False
+        return True
     if charge is None or since is None or until is None:
         return False
     return since <= charge < until
@@ -500,6 +509,20 @@ class GoCardlessPaymentsClient:
             },
         )
 
+    def iter_payments_by_charge_date(
+        self, date_since: datetime | date, date_until: datetime | date
+    ) -> list[dict[str, Any]]:
+        since = date_since.date() if isinstance(date_since, datetime) else date_since
+        until = date_until.date() if isinstance(date_until, datetime) else date_until
+        return self._paginate(
+            "payments",
+            "payments",
+            {
+                "charge_date[gte]": since.isoformat(),
+                "charge_date[lte]": until.isoformat(),
+            },
+        )
+
     def iter_payments_for_payout(self, payout_id: str) -> list[dict[str, Any]]:
         """Payments that funded a payout. /payments?payout= is an invalid filter."""
         if not payout_id:
@@ -508,8 +531,7 @@ class GoCardlessPaymentsClient:
         payments: list[dict[str, Any]] = []
         seen: set[str] = set()
         for item in items:
-            if (item.get("type") or "") != "payment":
-                continue
+            # Live items are type payment_paid_out / gocardless_fee, not "payment".
             payment_id = ((item.get("links") or {}).get("payment")) or ""
             if not payment_id or payment_id in seen:
                 continue
@@ -561,6 +583,10 @@ class GoCardlessPaymentsClient:
             for payment in _merge_by_id(
                 self._try_list(
                     "payments", lambda: self.iter_payments(date_since, date_until)
+                ),
+                self._try_list(
+                    "payments by charge_date",
+                    lambda: self.iter_payments_by_charge_date(date_since, date_until),
                 ),
                 payout_payments,
             )
