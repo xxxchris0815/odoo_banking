@@ -1,6 +1,7 @@
 """Odoo-independent GoCardless Payments helpers."""
 
 from .gocardless_payments import (  # noqa: F401
+    _as_iso,
     GC_API_BASE,
     GC_SANDBOX_API_BASE,
     GoCardlessConfigError,

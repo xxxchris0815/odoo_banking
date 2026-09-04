@@ -62,9 +62,16 @@ def _parse_datetime(value: str | None) -> datetime | None:
 
 
 def _as_iso(value: datetime | date) -> str:
+    """GoCardless rejects naive ISO datetimes; it wants UTC with a Z suffix."""
     if isinstance(value, datetime):
-        return value.replace(microsecond=0).isoformat()
-    return datetime.combine(value, datetime.min.time()).isoformat()
+        dt = value
+    else:
+        dt = datetime.combine(value, datetime.min.time())
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def payment_amount(payment: dict[str, Any]) -> float:

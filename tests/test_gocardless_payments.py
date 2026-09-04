@@ -7,6 +7,7 @@ from account_statement_import_online_gocardless_payments.lib.gocardless_payments
     GoCardlessConfigError,
     GoCardlessHTTPError,
     GoCardlessPaymentsClient,
+    _as_iso,
     clearing_balance,
     payment_amount,
     statement_line_from_payment,
@@ -33,6 +34,11 @@ def _payment(**overrides):
     values = dict(PAYMENT)
     values.update(overrides)
     return values
+
+
+def test_api_dates_are_utc_with_z_suffix():
+    assert _as_iso(datetime(2026, 4, 2)) == "2026-04-02T00:00:00Z"
+    assert _as_iso(datetime(2026, 7, 2, 15, 30, 1)) == "2026-07-02T15:30:01Z"
 
 
 def test_pending_collection_is_visible_with_zero_amount():
