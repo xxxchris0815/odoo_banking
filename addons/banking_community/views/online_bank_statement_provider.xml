@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <!-- Always-visible credentials. PayPal hides the shared fields for other
+         services; this block stays on the form regardless of Service. -->
+    <record id="online_bank_statement_provider_form_credentials" model="ir.ui.view">
+        <field name="name">online.bank.statement.provider.form.credentials</field>
+        <field name="model">online.bank.statement.provider</field>
+        <field
+            name="inherit_id"
+            ref="account_statement_import_online.online_bank_statement_provider_form"
+        />
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='main']" position="inside">
+                <group name="stack_credentials" string="Zugangsdaten">
+                    <field name="username" string="Benutzer / Client ID / Account-UUID" />
+                    <field
+                        name="password"
+                        password="True"
+                        string="Passwort / Secret / API-Key / Access Token"
+                    />
+                    <field
+                        name="passphrase"
+                        password="True"
+                        string="Webhook-Secret"
+                    />
+                    <field name="api_base" string="API-Adresse" />
+                    <div colspan="2" class="text-muted">
+                        <p>PayPal: Client ID + Secret (API-Adresse leer).</p>
+                        <p>GoCardless Payments: Access Token + Webhook-Secret.</p>
+                        <p>ZEN.COM: API-Key, optional Account-UUID.</p>
+                    </div>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>
