@@ -36,12 +36,19 @@ Repo-Root.
 
 ## 2. Repos klonen
 
-Als **dein** User (oder root), in einen Ordner, den Odoo lesen darf.
-Nicht nach `odoo/addons` legen (das überschreibt Updates).
+In den Ordner, der **schon** in `addons_path` steht — nicht nach
+`$HOME` und nicht nach `odoo/addons`.
+
+Sehr oft (Docker): `/mnt/extra-addons`. Hast du z. B.
+
+```ini
+addons_path = /mnt/extra-addons,/mnt/extra-addons/commission,
+```
+
+dann auf dem Host (oder im Container, wenn dort git geht):
 
 ```bash
-mkdir -p "$HOME/odoo-extra"
-cd "$HOME/odoo-extra"
+cd /mnt/extra-addons
 
 git clone --branch 19.0 --depth 1 \
   https://github.com/OCA/account-reconcile
@@ -53,11 +60,16 @@ git clone --branch cursor/community-banking-stack-f606 \
   https://github.com/xxxchris0815/odoo_banking
 ```
 
-`$HOME/odoo-extra` kannst du durch jeden bestehenden Extra-Addons-Ordner
-ersetzen, den du in `addons_path` schon nutzt.
+`/mnt/extra-addons` allein reicht nicht für die neuen Repos: OCA hat die
+Module eine Ebene tiefer, dieses Repo unter `odoo_banking/addons`. Deshalb
+`addons_path` so ergänzen:
 
-`account-reconcile` und `bank-statement-import` **sind selbst**
-Addons-Pfade. Bei `odoo_banking` ist der Addons-Pfad `addons/`.
+```ini
+addons_path = /mnt/extra-addons,/mnt/extra-addons/commission,/mnt/extra-addons/account-reconcile,/mnt/extra-addons/bank-statement-import,/mnt/extra-addons/odoo_banking/addons
+```
+
+`commission` kann stehen bleiben. Odoo neu starten, Apps-Liste aktualisieren,
+**Community Banking Stack** installieren.
 
 ---
 
@@ -67,15 +79,12 @@ Addons-Pfade. Bei `odoo_banking` ist der Addons-Pfad `addons/`.
 
 Bestehenden `addons_path` **ergänzen**, nicht ersetzen:
 
-Den **bestehenden** Core-Pfad stehen lassen und nur die drei neuen
-Ordner anhängen. Beispiel, wenn du nach `$HOME/odoo-extra` geklont hast:
+Den **bestehenden** Pfad stehen lassen und nur die drei Repo-Wurzeln
+anhängen. Wenn Extra-Addons schon unter `/mnt/extra-addons` liegen:
 
 ```ini
-addons_path = /usr/lib/python3/dist-packages/odoo/addons,/home/DEINUSER/odoo-extra/account-reconcile,/home/DEINUSER/odoo-extra/bank-statement-import,/home/DEINUSER/odoo-extra/odoo_banking/addons
+addons_path = /mnt/extra-addons,/mnt/extra-addons/commission,/mnt/extra-addons/account-reconcile,/mnt/extra-addons/bank-statement-import,/mnt/extra-addons/odoo_banking/addons
 ```
-
-`DEINUSER` durch deinen Login ersetzen. Wenn Odoo schon einen Extra-Pfad
-hat, die drei Klone dorthin legen und nur fehlende Einträge ergänzen.
 
 Odoo neu starten — je nachdem, wie du es betreibst:
 
@@ -92,27 +101,9 @@ docker compose restart
 
 ### Docker / Compose
 
-Repos auf den Host klonen, ins Container-Volume mounten:
-
-```yaml
-services:
-  odoo:
-    image: odoo:19
-    volumes:
-      - odoo-data:/var/lib/odoo
-      - ./extra/account-reconcile:/mnt/extra-addons/account-reconcile
-      - ./extra/bank-statement-import:/mnt/extra-addons/bank-statement-import
-      - ./extra/odoo_banking/addons:/mnt/extra-addons/odoo_banking
-    environment:
-      HOST: db
-      USER: odoo
-      PASSWORD: odoo
-    command: >
-      odoo
-      --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons/account-reconcile,/mnt/extra-addons/bank-statement-import,/mnt/extra-addons/odoo_banking
-```
-
-Container neu starten.
+Wenn `/mnt/extra-addons` schon ein Volume ist (wie bei dir): auf dem
+**Host-Ordner** klonen, der dort gemountet ist. Keine neuen Volumes.
+Nur `addons_path` um die drei Unterordner erweitern, Container neu starten.
 
 Odoo.sh: Extra-Addons als Git-Submodules im Repo, Branch 19.0, Deploy.
 
@@ -189,9 +180,9 @@ vor dieser Route).
 Pfad testen:
 
 ```bash
-ls "$HOME/odoo-extra/odoo_banking/addons/banking_community/__manifest__.py"
-ls "$HOME/odoo-extra/account-reconcile/account_reconcile_oca/__manifest__.py"
-ls "$HOME/odoo-extra/bank-statement-import/account_statement_import_online/__manifest__.py"
+ls /mnt/extra-addons/odoo_banking/addons/banking_community/__manifest__.py
+ls /mnt/extra-addons/account-reconcile/account_reconcile_oca/__manifest__.py
+ls /mnt/extra-addons/bank-statement-import/account_statement_import_online/__manifest__.py
 ```
 
 Alle drei Dateien müssen existieren, dann Odoo neu starten und die

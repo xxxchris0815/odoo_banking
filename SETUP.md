@@ -58,17 +58,21 @@ Die Varianten (Debian, Docker, Odoo.sh) stehen in [INSTALL.md](INSTALL.md).
 Kurz auf dem Host:
 
 ```bash
-mkdir -p "$HOME/odoo-extra"
-cd "$HOME/odoo-extra"
+cd /mnt/extra-addons    # dein bestehender Extra-Addons-Pfad
 
 git clone --branch 19.0 --depth 1 https://github.com/OCA/account-reconcile
 git clone --branch 19.0 --depth 1 https://github.com/OCA/bank-statement-import
 git clone --branch cursor/community-banking-stack-f606 https://github.com/xxxchris0815/odoo_banking
 ```
 
-`addons_path` um diese drei Einträge **ergänzen** — bei uns das
-Unterverzeichnis `odoo_banking/addons`. Odoo neu starten, Apps-Liste
-aktualisieren.
+`addons_path` um die drei Repo-Wurzeln **ergänzen** (bestehende Einträge
+lassen):
+
+```ini
+addons_path = /mnt/extra-addons,/mnt/extra-addons/commission,/mnt/extra-addons/account-reconcile,/mnt/extra-addons/bank-statement-import,/mnt/extra-addons/odoo_banking/addons
+```
+
+Odoo neu starten, Apps-Liste aktualisieren.
 
 ---
 
