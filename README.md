@@ -4,6 +4,9 @@ Sauberer Ersatz für die Odoo-Cloud-Kontenkopplung plus n8n-Abgleich.
 Ziel: jede Bewegung landet als `account.bank.statement.line` in der
 Community-Buchhaltung und wird dort abgestimmt — nicht in n8n.
 
+**Zum Einrichten:** [SETUP.md](SETUP.md) — zwölf Schritte von den Zugangsdaten
+bis zur Abnahme, in dieser Reihenfolge.
+
 ## Empfehlung in einem Satz
 
 **OCA Online Bank Statements als einzige Import-Pipeline, n8n nur noch als
@@ -140,18 +143,23 @@ Datei im Journal-Dashboard über den normalen Statement-Import laden.
 n8n kann dieselbe Datei per JSON-RPC an `account.statement.import` schieben,
 soll die Zeilen aber nicht selbst umbauen.
 
-## Einrichtung (Reihenfolge)
+## Einrichtung
 
-1. Odoo 19 Community mit `account` und deiner Lokalisierung (`l10n_de` …).
-2. OCA-Repos `19.0` auf den Addons-Pfad, danach dieses Repo.
-3. Modul `banking_community` installieren.
-4. Pro Konto: Bankkonto + Journal + Währung + Geld-/Kartenkonto.
-5. PayPal / GoCardless / ZEN als Online-Provider am Journal.
-6. Einmal historischen Pull, dann den OCA-Cron (Standard: stündlich).
-7. Abstimmungmodelle für PayPal-Gebühren, ZEN-FX, interne Transfers
-   (PayPal → Bank, ZEN → Bank, Jeeves-Settlement).
-8. n8n-Workflows deaktivieren, sobald die ersten zwei Pulls sauber und
-   ohne Duplikate laufen.
+Die Klick-Anleitung steht in [SETUP.md](SETUP.md). Kurz die Reihenfolge:
+
+1. Klären, ob GoCardless Bank Account Data oder nur Merchant-Payouts ist.
+2. PayPal-Live-Keys, ZEN-Transfers-Key, optional BAD-Secrets, eine Jeeves-CSV.
+3. OCA `19.0` + dieses Repo auf den Addons-Pfad, Odoo neu starten.
+4. Module installieren, Gruppe *Vollständige Buchhaltungsfunktionen*.
+5. Kontenplan: Geldtransit (abstimmbar), ein Geldkonto pro Wallet/Währung,
+   Jeeves Credit als Verbindlichkeit.
+6. Ein Journal pro Konto und Währung, danach Provider am Journal.
+7. Zuerst 7 Tage an **einem** Journal pullen, Re-Pull ohne Duplikate, dann
+   Historie, dann das nächste Journal.
+8. Jeeves nur per Datei-Import, nicht parallel in n8n mappen.
+9. Abstimmungmodelle für Gebühren und Geldtransit.
+10. Zwei saubere Cron-Läufe, Stichprobe gegen die Portale, dann n8n-Buchung
+    abschalten.
 
 ## Interne Transfers
 
