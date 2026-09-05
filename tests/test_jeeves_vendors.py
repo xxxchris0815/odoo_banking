@@ -17,6 +17,7 @@ from account_statement_import_jeeves.lib.jeeves_vendors import (
     extract_vendor_cache_id,
     format_jeeves_phone,
     iso3_from_country_code,
+    partner_phone,
     match_vendor,
     sanitize_iban,
     split_personal_name,
@@ -198,6 +199,26 @@ def test_client_lists_creates_and_updates_vendors():
     assert any("list_vendors" in payload for payload in calls)
     assert sum("create_vendor" in payload for payload in calls) == 3
     assert any("update_vendor" in payload for payload in calls)
+
+
+class _FakePartner:
+    def __init__(self, fields, **values):
+        self._fields = fields
+        self._values = values
+
+    def __getitem__(self, name):
+        if name not in self._fields:
+            raise AttributeError(name)
+        return self._values.get(name)
+
+
+def test_partner_phone_skips_missing_mobile_field():
+    odoo19 = _FakePartner({"phone": True, "name": True}, phone="+49 151 000")
+    assert partner_phone(odoo19) == "+49 151 000"
+    only_mobile = _FakePartner({"phone": True, "mobile": True}, mobile="+49 160 111")
+    assert partner_phone(only_mobile) == "+49 160 111"
+    empty = _FakePartner({"phone": True}, phone=False)
+    assert partner_phone(empty) == ""
 
 
 def test_still_refuses_card_and_payment_tools():

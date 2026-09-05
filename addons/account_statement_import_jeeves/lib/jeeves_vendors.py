@@ -201,6 +201,21 @@ def split_personal_name(name: str | None) -> tuple[str, str]:
     return parts[0], " ".join(parts[1:])
 
 
+def partner_phone(record: Any) -> str:
+    """Read phone, then mobile, but only if the field exists (Odoo 19)."""
+    fields = getattr(record, "_fields", None)
+    for name in ("phone", "mobile"):
+        if fields is not None and name not in fields:
+            continue
+        try:
+            value = record[name] if fields is not None else getattr(record, name, None)
+        except (AttributeError, KeyError):
+            continue
+        if value not in (None, False, ""):
+            return str(value).strip()
+    return ""
+
+
 def _walk_dicts(value: Any):
     if isinstance(value, dict):
         yield value

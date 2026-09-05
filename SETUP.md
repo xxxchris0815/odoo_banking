@@ -177,7 +177,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.6.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.13.0** |
 | Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.12.0** |
-| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.7.0** |
+| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.8.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach

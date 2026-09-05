@@ -16,6 +16,7 @@ from ..lib.jeeves_vendors import (
     default_payment_method,
     format_jeeves_phone,
     iso3_from_country_code,
+    partner_phone,
     match_vendor,
     sanitize_iban,
     split_personal_name,
@@ -85,7 +86,7 @@ class JeevesVendorWizard(models.TransientModel):
         bank_iso3 = iso3_from_country_code(
             (bank_country.code if bank_country else iso2) or iso2
         )
-        phone = partner.phone or partner.mobile or ""
+        phone = partner_phone(partner)
         try:
             phone = format_jeeves_phone(phone, iso2) if phone else ""
         except JeevesVendorError:
