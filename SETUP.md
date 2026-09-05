@@ -304,14 +304,35 @@ kein Wallet, und setzt deshalb keine Salden.
    - **mTLS CA chain** nur wenn ZEN eine CA-Datei mitgeliefert hat
    - **Private key passphrase** nur wenn der Key verschlüsselt ist
    - **Account UUID** = `accountId` aus der Notification (z. B. `58d85a6c-…`)
-   - **Webhook URL** nach ZEN Notifications kopieren
-     (`https://DEINE-DOMAIN/zen/webhook/<token>`). Nicht mehr n8n.
+   - **Webhook URL** in Odoo kopieren
+     (`https://DEINE-DOMAIN/zen/webhook/<token>`).
 4. Speichern. Ohne Zertifikat + Key kommt kein Request durch (mTLS).
 
-Der Webhook enthält nur `paymentId` / `accountId` / `transactionStatus`.
-Odoo holt danach `GET /payments/v1.0/{paymentId}` (Antwort kann ein Objekt
-oder ein Array sein). Nur `SETTLED` wird gebucht. `unique_import_id` =
-`zen:pay:{id}`. Gebühren > 0 werden eigene Zeilen (`zen:pay:{id}:fee`).
+ZEN erlaubt oft nur **eine** Notification-URL. Dann bleibt
+`https://automation.orgasmic.live/webhook/zen-webhook` bei ZEN, und n8n
+reicht nur durch — **keine** Payment-Details und **keine** Journalzeilen
+mehr in n8n (sonst Duplikate).
+
+n8n, zwei Nodes:
+
+1. **Webhook** (POST, Production URL = die bei ZEN). Respond = *Immediately*,
+   Antwort `ok` / 200.
+2. **HTTP Request** direkt danach:
+   - Method `POST`
+   - URL = die Webhook-URL aus dem Odoo-Provider
+   - Header `Content-Type: application/json`
+   - Body = JSON, Expression `{{ $json.body }}`
+     (das ist der ZEN-Stub: `paymentId`, `accountId`, `transactionStatus`)
+   - Timeout 30s, Fehler nicht den Webhook-200 an ZEN verderben
+
+Nicht den ganzen n8n-Envelope (`webhookUrl`, `executionMode`) schicken,
+nicht mTLS/Bearer am Odoo-Hook (nur der Token in der URL). Weitere
+Empfänger = weitere HTTP-Request-Nodes parallel.
+
+Der Stub enthält nur `paymentId` / `accountId` / `transactionStatus`.
+Odoo holt danach `GET /payments/v1.0/{paymentId}`. Nur `SETTLED` wird
+gebucht. `unique_import_id` = `zen:pay:{id}`. Gebühren > 0 werden eigene
+Zeilen (`zen:pay:{id}:fee`).
 
 ### 6c GoCardless Payments — Daten eintragen
 
