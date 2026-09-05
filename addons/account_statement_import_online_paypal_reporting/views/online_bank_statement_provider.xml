@@ -11,7 +11,7 @@
             <xpath expr="//group[@name='main']" position="inside">
                 <group
                     name="paypal"
-                    string="Credentials"
+                    string="PayPal"
                     invisible="service != 'paypal'"
                 >
                     <group>
@@ -30,6 +30,25 @@
                             string="Secret"
                             password="True"
                             required="service == 'paypal'"
+                        />
+                        <field
+                            name="paypal_webhook_url"
+                            string="Webhook URL"
+                            widget="CopyClipboardChar"
+                            readonly="1"
+                        />
+                        <field name="paypal_webhook_token" invisible="1" />
+                        <field
+                            name="paypal_webhook_id"
+                            string="Webhook ID"
+                            placeholder="from PayPal after adding the URL"
+                        />
+                        <button
+                            name="action_paypal_register_webhook"
+                            type="object"
+                            string="Register webhook"
+                            class="btn-secondary"
+                            invisible="not username or not password or not paypal_webhook_url"
                         />
                     </group>
                 </group>

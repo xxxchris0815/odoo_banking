@@ -174,7 +174,30 @@ Sandbox-Keys funktionieren nicht gegen die Live-API. Umgekehrt auch nicht.
    - Sandbox nur mit Sandbox-Keys:
      `https://api.sandbox.paypal.com`
    - Intervall z. B. 1 Stunde
+   - **Webhook URL** kopieren (ein Token pro PayPal-Konto)
 5. Speichern.
+
+#### Webhook (mehrere PayPal-Konten)
+
+Jedes Journal / jeder Provider hat eine **eigene** URL:
+
+`https://DEINE-DOMAIN/paypal/webhook/<token>`
+
+Konto A → URL von Provider A, Konto B → URL von Provider B.
+Dieselbe URL für zwei Merchant-Accounts nicht verwenden.
+
+1. Provider speichern, **Webhook URL** kopieren.
+2. Entweder **Register webhook** klicken (schreibt die Webhook-ID
+   automatisch) oder in [developer.paypal.com](https://developer.paypal.com)
+   → die Live-App → Webhooks → URL eintragen.
+   Events: Payment sale/capture completed, refunded, reversed;
+   Dispute created.
+3. Die **Webhook ID** (`WH-…` / `0EH…`) ins Provider-Feld, falls du
+   manuell eingetragen hast.
+
+Ohne Webhook-ID akzeptiert Odoo den Aufruf nur über das URL-Token.
+Mit ID prüft Odoo die PayPal-Signatur. Der Webhook zieht die letzten
+drei Tage nach (wie ein kurzer Pull).
 
 #### C) Testen
 

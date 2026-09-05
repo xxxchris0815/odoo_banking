@@ -232,11 +232,14 @@ Fakturierung → Konfiguration:
 - Beim Anlegen eines Providers erscheinen **PayPal**, **ZEN.COM**,
   **GoCardless Payments**
 
-Webhook von außen (nur GoCardless):
+Webhooks von außen:
 
 ```
 https://DEINE-DOMAIN/gocardless/payments/webhook
+https://DEINE-DOMAIN/paypal/webhook/<token-des-providers>
 ```
+
+PayPal: jedes Konto hat eine eigene URL (Token steht im Provider-Formular).
 
 Die URL muss aus dem Internet erreichbar sein (Proxy, TLS, kein Basic-Auth
 vor dieser Route).

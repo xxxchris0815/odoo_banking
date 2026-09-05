@@ -1,17 +1,21 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 import requests
 
-from odoo import api, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from ..lib.paypal_transactions import (
     PAYPAL_API_BASE,
+    WEBHOOK_LOOKBACK_DAYS,
     PayPalClient,
     PayPalConfigError,
     PayPalHTTPError,
+    new_webhook_token,
+    webhook_url,
 )
 
 _logger = logging.getLogger(__name__)
@@ -31,6 +35,23 @@ def _requests_http(method, url, headers, data=None):
 class OnlineBankStatementProviderPayPal(models.Model):
     _inherit = "online.bank.statement.provider"
 
+    paypal_webhook_token = fields.Char(
+        string="Webhook token",
+        copy=False,
+        help="Identifies this PayPal account in the webhook URL. "
+        "Each provider gets its own token.",
+    )
+    paypal_webhook_id = fields.Char(
+        string="Webhook ID",
+        copy=False,
+        help="ID PayPal shows after you add the webhook URL "
+        "(or after Register webhook).",
+    )
+    paypal_webhook_url = fields.Char(
+        string="Webhook URL",
+        compute="_compute_paypal_webhook_url",
+    )
+
     @api.model
     def _get_available_services(self):
         services = [
@@ -39,6 +60,49 @@ class OnlineBankStatementProviderPayPal(models.Model):
             if service[0] != "paypal"
         ]
         return services + [("paypal", "PayPal")]
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if vals.get("service") == "paypal" and not vals.get("paypal_webhook_token"):
+                vals["paypal_webhook_token"] = new_webhook_token()
+        return super().create(vals_list)
+
+    def write(self, vals):
+        res = super().write(vals)
+        if "paypal_webhook_token" not in vals:
+            for rec in self.filtered(
+                lambda item: item.service == "paypal" and not item.paypal_webhook_token
+            ):
+                rec.paypal_webhook_token = new_webhook_token()
+        return res
+
+    @api.model
+    def _paypal_assign_missing_tokens(self):
+        records = self.search(
+            [
+                ("service", "=", "paypal"),
+                "|",
+                ("paypal_webhook_token", "=", False),
+                ("paypal_webhook_token", "=", ""),
+            ]
+        )
+        for rec in records:
+            rec.paypal_webhook_token = new_webhook_token()
+
+    @api.depends("service", "paypal_webhook_token")
+    def _compute_paypal_webhook_url(self):
+        base = self._paypal_public_base_url()
+        for rec in self:
+            if rec.service == "paypal" and rec.paypal_webhook_token:
+                rec.paypal_webhook_url = webhook_url(base, rec.paypal_webhook_token)
+            else:
+                rec.paypal_webhook_url = False
+
+    def _paypal_public_base_url(self):
+        return (
+            self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
+        ).rstrip("/")
 
     def _obtain_statement_data(self, date_since, date_until):
         self.ensure_one()
@@ -89,3 +153,44 @@ class OnlineBankStatementProviderPayPal(models.Model):
                 continue
             filtered.append(line)
         return filtered, extras
+
+    def action_paypal_register_webhook(self):
+        self.ensure_one()
+        if self.service != "paypal":
+            raise UserError(self.env._("This action is only for the PayPal provider."))
+        if not self.paypal_webhook_url:
+            raise UserError(self.env._("Save the provider first so a webhook URL exists."))
+        try:
+            webhook_id = self._paypal_client().ensure_webhook(self.paypal_webhook_url)
+        except (PayPalConfigError, PayPalHTTPError) as error:
+            raise UserError(str(error)) from error
+        self.paypal_webhook_id = webhook_id
+        return True
+
+    def _paypal_handle_webhook(self, headers, event):
+        """Verify (when a webhook ID is set) and pull the last few days."""
+        self.ensure_one()
+        if self.paypal_webhook_id:
+            try:
+                if not self._paypal_client().verify_webhook(
+                    self.paypal_webhook_id, headers, event
+                ):
+                    return False
+            except (PayPalConfigError, PayPalHTTPError) as error:
+                _logger.warning("PayPal webhook verification failed: %s", error)
+                return False
+        else:
+            _logger.info(
+                "PayPal webhook %s accepted by URL token only; set Webhook ID to verify",
+                self.id,
+            )
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        until = (now + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        since = until - timedelta(days=WEBHOOK_LOOKBACK_DAYS)
+        lines, extras = self._paypal_obtain_statement_data(since, until)
+        if not lines:
+            return True
+        self._create_or_update_statement((lines, extras), since, until)
+        return True

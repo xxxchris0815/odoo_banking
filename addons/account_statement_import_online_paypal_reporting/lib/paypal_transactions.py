@@ -7,7 +7,9 @@ is the account holder on outgoing payments and must not become the partner.
 
 from __future__ import annotations
 
+import json
 import logging
+import secrets
 from base64 import b64encode
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -23,6 +25,18 @@ NO_DATA_FOR_DATE_AVAIL_MSG = "Data for the given start date is not available."
 MAX_HISTORY = timedelta(days=365 * 3)
 CHUNK_DAYS = 31
 PAGE_SIZE = 500
+WEBHOOK_PATH_PREFIX = "/paypal/webhook"
+WEBHOOK_LOOKBACK_DAYS = 3
+DEFAULT_WEBHOOK_EVENTS = (
+    "PAYMENT.SALE.COMPLETED",
+    "PAYMENT.SALE.REFUNDED",
+    "PAYMENT.SALE.REVERSED",
+    "PAYMENT.CAPTURE.COMPLETED",
+    "PAYMENT.CAPTURE.DENIED",
+    "PAYMENT.CAPTURE.REFUNDED",
+    "PAYMENT.CAPTURE.REVERSED",
+    "CUSTOMER.DISPUTE.CREATED",
+)
 
 STATUS_LABELS = {
     "S": "paid",
@@ -108,6 +122,35 @@ def _parse_datetime(value: str | datetime | date | None) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def new_webhook_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def webhook_url(base_url: str, token: str | None) -> str:
+    if not token:
+        return ""
+    return f"{str(base_url or '').rstrip('/')}{WEBHOOK_PATH_PREFIX}/{token}"
+
+
+def webhook_signature_fields(headers: dict[str, Any] | None) -> dict[str, str]:
+    """Read PayPal transmission headers, regardless of case."""
+    normalized = {
+        str(key).lower(): "" if value is None else str(value)
+        for key, value in (headers or {}).items()
+    }
+    return {
+        "auth_algo": normalized.get("paypal-auth-algo", ""),
+        "cert_url": normalized.get("paypal-cert-url", ""),
+        "transmission_id": normalized.get("paypal-transmission-id", ""),
+        "transmission_sig": normalized.get("paypal-transmission-sig", ""),
+        "transmission_time": normalized.get("paypal-transmission-time", ""),
+    }
+
+
+def webhook_verified(payload: dict[str, Any] | None) -> bool:
+    return (payload or {}).get("verification_status") == "SUCCESS"
 
 
 def as_rfc3339(value: datetime | date | None) -> str | None:
@@ -646,3 +689,59 @@ class PayPalClient:
             except PayPalHTTPError as error:
                 _logger.info("PayPal balance lookup skipped: %s", error)
         return lines, extras
+
+    def _request_json(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
+        headers = self._auth_headers()
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(body).encode("utf-8") if body is not None else None
+        return self._request(method, f"{self.api_base}{path}", headers, data)
+
+    def verify_webhook(
+        self,
+        webhook_id: str,
+        headers: dict[str, Any],
+        event: dict[str, Any],
+    ) -> bool:
+        if not webhook_id:
+            raise PayPalConfigError("PayPal Webhook ID is missing on the provider")
+        fields = webhook_signature_fields(headers)
+        if not all(fields.values()):
+            return False
+        payload = self._request_json(
+            "POST",
+            "/v1/notifications/verify-webhook-signature",
+            {
+                **fields,
+                "webhook_id": webhook_id,
+                "webhook_event": event,
+            },
+        )
+        return webhook_verified(payload if isinstance(payload, dict) else {})
+
+    def list_webhooks(self) -> list[dict[str, Any]]:
+        payload = self._request_json("GET", "/v1/notifications/webhooks")
+        if isinstance(payload, dict):
+            return list(payload.get("webhooks") or [])
+        return []
+
+    def create_webhook(self, url: str, event_names: tuple[str, ...] | None = None) -> dict[str, Any]:
+        payload = self._request_json(
+            "POST",
+            "/v1/notifications/webhooks",
+            {
+                "url": url,
+                "event_types": [
+                    {"name": name} for name in (event_names or DEFAULT_WEBHOOK_EVENTS)
+                ],
+            },
+        )
+        if not isinstance(payload, dict) or not payload.get("id"):
+            raise PayPalHTTPError(200, "PayPal webhook create returned no id")
+        return payload
+
+    def ensure_webhook(self, url: str) -> str:
+        """Reuse a webhook already registered for this exact URL."""
+        for hook in self.list_webhooks():
+            if hook.get("url") == url and hook.get("id"):
+                return str(hook["id"])
+        return str(self.create_webhook(url)["id"])

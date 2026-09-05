@@ -112,6 +112,10 @@ Live-Mapping (PayPal liefert `full_name` fast nie):
 `unique_import_id` = `pp:tx:{transaction_id}` bzw. `:fee`. Kein Zeitstempel
 in der ID — ein Re-Pull aktualisiert nicht doppelt.
 
+Webhook pro Konto: `https://DEINE-DOMAIN/paypal/webhook/<token>`.
+Jede Provider-Zeile hat ein eigenes Token — so können mehrere
+PayPal-Accounts auf dieselbe Odoo-Instanz zeigen.
+
 Nur die letzten drei Jahre. Ältere Historie per PayPal-CSV und
 `account_statement_import_sheet_file`. Details: SETUP.md Schritt 6a.
 

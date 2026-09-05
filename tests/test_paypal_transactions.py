@@ -6,14 +6,19 @@ import pytest
 from account_statement_import_online_paypal_reporting.lib.paypal_transactions import (
     PAYPAL_API_BASE,
     TRANSACTIONS_SCOPE,
+    WEBHOOK_PATH_PREFIX,
     PayPalClient,
     PayPalConfigError,
     PayPalHTTPError,
     as_rfc3339,
     format_payer_name,
+    new_webhook_token,
     statement_line_from_transaction,
     statement_lines_from_transaction,
     statement_lines_from_transactions,
+    webhook_signature_fields,
+    webhook_url,
+    webhook_verified,
 )
 
 
@@ -427,3 +432,80 @@ def test_september_live_shape_nets_refund_and_fee():
     amounts = [line["amount"] for line in lines]
     assert amounts == [4500.0, -112.40, -4500.0, 112.40]
     assert {line["partner_name"] for line in lines} == {"Eva Muster", "PayPal"}
+
+
+def test_each_paypal_account_gets_its_own_webhook_url():
+    token_a = new_webhook_token()
+    token_b = new_webhook_token()
+    assert token_a != token_b
+    assert webhook_url("https://erp.example.com", token_a) == (
+        f"https://erp.example.com{WEBHOOK_PATH_PREFIX}/{token_a}"
+    )
+    assert webhook_url("https://erp.example.com/", token_b).endswith(token_b)
+    assert webhook_url("https://erp.example.com", token_a) != webhook_url(
+        "https://erp.example.com", token_b
+    )
+
+
+def test_webhook_headers_are_case_insensitive():
+    fields = webhook_signature_fields(
+        {
+            "Paypal-Transmission-Id": "id-1",
+            "PAYPAL-AUTH-ALGO": "SHA256withRSA",
+            "paypal-cert-url": "https://api.paypal.com/cert",
+            "paypal-transmission-sig": "sig",
+            "paypal-transmission-time": "2026-09-05T06:00:00Z",
+        }
+    )
+    assert fields["transmission_id"] == "id-1"
+    assert fields["auth_algo"] == "SHA256withRSA"
+    assert webhook_verified({"verification_status": "SUCCESS"})
+    assert not webhook_verified({"verification_status": "FAILURE"})
+
+
+def test_client_verifies_and_reuses_webhooks():
+    created = []
+
+    def verify(parsed, _headers, data):
+        body = __import__("json").loads(data.decode())
+        assert body["webhook_id"] == "WH-A"
+        assert body["transmission_id"] == "id-1"
+        return 200, {"verification_status": "SUCCESS"}
+
+    def list_hooks(_parsed, _headers, _data):
+        return 200, {
+            "webhooks": [
+                {"id": "WH-A", "url": "https://erp.example.com/paypal/webhook/tok-a"},
+                {"id": "WH-B", "url": "https://erp.example.com/paypal/webhook/tok-b"},
+            ]
+        }
+
+    def create(parsed, _headers, data):
+        created.append(__import__("json").loads(data.decode()))
+        return 201, {"id": "WH-NEW", "url": created[-1]["url"]}
+
+    http = _FakeHttp(
+        {
+            ("POST", "/v1/oauth2/token"): _token_ok,
+            ("POST", "/v1/notifications/verify-webhook-signature"): verify,
+            ("GET", "/v1/notifications/webhooks"): list_hooks,
+            ("POST", "/v1/notifications/webhooks"): create,
+        }
+    )
+    client = PayPalClient("id", "secret", http_request=http)
+    assert client.verify_webhook(
+        "WH-A",
+        {"paypal-transmission-id": "id-1",
+         "paypal-auth-algo": "SHA256withRSA",
+         "paypal-cert-url": "https://api.paypal.com/cert",
+         "paypal-transmission-sig": "sig",
+         "paypal-transmission-time": "2026-09-05T06:00:00Z"},
+        {"id": "WH-EVENT", "event_type": "PAYMENT.SALE.COMPLETED"},
+    )
+    assert client.ensure_webhook("https://erp.example.com/paypal/webhook/tok-b") == "WH-B"
+    assert client.ensure_webhook("https://erp.example.com/paypal/webhook/tok-c") == "WH-NEW"
+    assert created[0]["url"].endswith("tok-c")
+    assert {item["name"] for item in created[0]["event_types"]} >= {
+        "PAYMENT.SALE.COMPLETED",
+        "PAYMENT.CAPTURE.REFUNDED",
+    }

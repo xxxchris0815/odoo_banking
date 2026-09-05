@@ -1,1 +1,4 @@
-# Technical glue module: dependencies only.
+import importlib.util
+
+if importlib.util.find_spec("odoo"):
+    from . import models

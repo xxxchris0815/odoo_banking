@@ -9,7 +9,11 @@
         />
         <field name="arch" type="xml">
             <xpath expr="//group[@name='main']" position="inside">
-                <group name="stack_credentials" string="Credentials">
+                <group
+                    name="stack_credentials"
+                    string="Credentials"
+                    invisible="service in ('paypal', 'zen', 'gocardless_payments')"
+                >
                     <group>
                         <field name="username" string="Client ID / Account UUID" />
                         <field
