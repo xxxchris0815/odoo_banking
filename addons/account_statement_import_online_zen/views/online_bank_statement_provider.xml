@@ -27,6 +27,13 @@
                             required="service == 'zen'"
                         />
                         <field
+                            name="zen_webhook_url"
+                            string="Webhook URL"
+                            widget="CopyClipboardChar"
+                            readonly="1"
+                        />
+                        <field name="zen_webhook_token" invisible="1" />
+                        <field
                             name="certificate_public_key"
                             string="mTLS client certificate"
                             placeholder="-----BEGIN CERTIFICATE-----"

@@ -175,7 +175,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Community Banking Stack | `banking_community` | **19.0.1.8.0** |
 | PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.4.0** |
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.3.0** |
-| Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.3.0** |
+| Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.4.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -300,7 +300,15 @@ kein Wallet, und setzt deshalb keine Salden.
    - **mTLS private key** = PEM `-----BEGIN PRIVATE KEY-----`
    - **mTLS CA chain** nur wenn ZEN eine CA-Datei mitgeliefert hat
    - **Private key passphrase** nur wenn der Key verschlüsselt ist
+   - **Account UUID** = `accountId` aus der Notification (z. B. `58d85a6c-…`)
+   - **Webhook URL** nach ZEN Notifications kopieren
+     (`https://DEINE-DOMAIN/zen/webhook/<token>`). Nicht mehr n8n.
 4. Speichern. Ohne Zertifikat + Key kommt kein Request durch (mTLS).
+
+Der Webhook enthält nur `paymentId` / `accountId` / `transactionStatus`.
+Odoo holt danach `GET /payments/v1.0/{paymentId}` (Antwort kann ein Objekt
+oder ein Array sein). Nur `SETTLED` wird gebucht. `unique_import_id` =
+`zen:pay:{id}`. Gebühren > 0 werden eigene Zeilen (`zen:pay:{id}:fee`).
 
 ### 6c GoCardless Payments — Daten eintragen
 
@@ -563,6 +571,7 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 | PayPal lehnt die Webhook-URL ab (http) | Odoo speichert oft `http://…:8069`. Ab 19.0.1.4.0 wird daraus `https://deine-domain` ohne Port. Zusätzlich Einstellungen → Technische Parameter `web.base.url` auf `https://erp.…` setzen. |
 | Stripe: running balance matches not ending | Live-`/v1/balance` ist oft 0, weil das Payout später kam. Ab **19.0.1.3.0** ist der Endsaldo das Stripe-Wallet *an dem Tag* (jetzt minus spätere Nets). Bestehenden Auszug `BNK4/…`: Endsaldo auf den Computed Balance setzen **oder** Auszug samt Zeilen löschen und den Tag neu pullen. Ein zweiter Pull allein ändert den alten Endsaldo nicht. |
 | ZEN 403 | Terminal-Key statt Transfers-Key, oder mTLS-Zertifikat fehlt / passt nicht zum Key |
+| ZEN-Webhook bucht nichts | n8n-URL steht noch in ZEN Notifications. Auf `https://DEINE-DOMAIN/zen/webhook/<token>` umstellen. Account UUID am Provider muss zum `accountId` passen. |
 | GoCardless-Einzug fehlt | Access Token Live/Sandbox verdreht, oder Webhook-URL nicht erreichbar |
 | Fail erzeugt eine zweite Zeile | n8n schreibt noch parallel; nur der Payments-Provider darf dieses Journal füllen |
 | Clearing bleibt nach Payout offen | Gebührenzeile fehlt oder Bankeingang wurde zusätzlich ins GC-Journal importiert |

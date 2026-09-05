@@ -190,7 +190,10 @@ Nutzt die Transfers API (`api-services.zen.com`), nicht die Shop-Payments-API.
    - Username = optionale Account-UUID (sonst IBAN-Match)
    - Certificate / Private Key = PEM-Blöcke
    - API Base leer = Produktion, sonst `https://api-services.zen-test.com`
-5. Es werden nur `SETTLED`-Zahlungen übernommen. `IN_PROGRESS` / `REJECTED`
+5. Webhook: `https://DEINE-DOMAIN/zen/webhook/<token>` in ZEN Notifications.
+   Payload hat `paymentId` + `accountId`; Odoo lädt danach
+   `GET /payments/v1.0/{paymentId}` (live oft ein Array).
+6. Es werden nur `SETTLED`-Zahlungen übernommen. `IN_PROGRESS` / `REJECTED`
    bleiben draußen, sonst entstehen Duplikate sobald sie settled sind.
 
 Ohne Transfers-API-Zugang: monatlichen CSV-Kontoauszug aus der ZEN-App

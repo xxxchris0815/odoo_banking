@@ -2,8 +2,9 @@
 
 import base64
 import logging
+from datetime import timedelta
 
-from odoo import api, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from ..lib.zen_transactions import (
@@ -12,7 +13,10 @@ from ..lib.zen_transactions import (
     ZenConfigError,
     ZenHTTPError,
     ZenTLS,
+    new_webhook_token,
+    public_https_base,
     requests_get_mtls,
+    webhook_url,
 )
 
 _logger = logging.getLogger(__name__)
@@ -55,9 +59,57 @@ def _requests_get(url, headers, tls=None):
 class OnlineBankStatementProviderZen(models.Model):
     _inherit = "online.bank.statement.provider"
 
+    zen_webhook_token = fields.Char(string="Webhook token", copy=False)
+    zen_webhook_url = fields.Char(
+        string="Webhook URL",
+        compute="_compute_zen_webhook_url",
+    )
+
     @api.model
     def _get_available_services(self):
         return super()._get_available_services() + [("zen", "ZEN.COM")]
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if vals.get("service") == "zen" and not vals.get("zen_webhook_token"):
+                vals["zen_webhook_token"] = new_webhook_token()
+        return super().create(vals_list)
+
+    def write(self, vals):
+        res = super().write(vals)
+        if "zen_webhook_token" not in vals:
+            for rec in self.filtered(
+                lambda item: item.service == "zen" and not item.zen_webhook_token
+            ):
+                rec.zen_webhook_token = new_webhook_token()
+        return res
+
+    @api.model
+    def _zen_assign_missing_tokens(self):
+        records = self.search(
+            [
+                ("service", "=", "zen"),
+                "|",
+                ("zen_webhook_token", "=", False),
+                ("zen_webhook_token", "=", ""),
+            ]
+        )
+        for rec in records:
+            rec.zen_webhook_token = new_webhook_token()
+
+    @api.depends("service", "zen_webhook_token")
+    def _compute_zen_webhook_url(self):
+        base = self._zen_public_base_url()
+        for rec in self:
+            if rec.service == "zen" and rec.zen_webhook_token:
+                rec.zen_webhook_url = webhook_url(base, rec.zen_webhook_token)
+            else:
+                rec.zen_webhook_url = False
+
+    def _zen_public_base_url(self):
+        raw = self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
+        return public_https_base(raw) or raw.rstrip("/")
 
     def _obtain_statement_data(self, date_since, date_until):
         self.ensure_one()
@@ -115,6 +167,13 @@ class OnlineBankStatementProviderZen(models.Model):
             )
         except (ZenConfigError, ZenHTTPError) as error:
             raise UserError(str(error)) from error
+        filtered = self._zen_filter_lines(lines)
+        if not filtered:
+            return [], extras
+        return filtered, extras
+
+    def _zen_filter_lines(self, lines):
+        self.ensure_one()
         journal = self.journal_id
         journal_currency = journal.currency_id or journal.company_id.currency_id
         filtered = []
@@ -133,6 +192,46 @@ class OnlineBankStatementProviderZen(models.Model):
                 )
                 continue
             filtered.append(line)
+        return filtered
+
+    def _zen_provider_for_account(self, account_id):
+        """Route a notification to the wallet that owns this account UUID."""
+        account_id = (account_id or "").strip()
+        if account_id:
+            match = self.filtered(lambda rec: rec.username == account_id)
+            if match:
+                return match[:1]
+            others = self.env["online.bank.statement.provider"].sudo().search(
+                [
+                    ("service", "=", "zen"),
+                    ("active", "=", True),
+                    ("username", "=", account_id),
+                ],
+                limit=1,
+            )
+            if others:
+                return others
+        return self[:1]
+
+    def _zen_handle_webhook_event(self, event):
+        self.ensure_one()
+        status = (event.get("status") or "").upper()
+        if status and status != "SETTLED":
+            return True
+        payment_id = event.get("payment_id")
+        if not payment_id:
+            return True
+        try:
+            lines, extras = self._zen_client().obtain_statement_lines_for_payment(
+                payment_id
+            )
+        except (ZenConfigError, ZenHTTPError) as error:
+            raise UserError(str(error)) from error
+        filtered = self._zen_filter_lines(lines)
         if not filtered:
-            return [], extras
-        return filtered, extras
+            return True
+        dates = [line["date"] for line in filtered]
+        self._create_or_update_statement(
+            (filtered, extras), min(dates), max(dates) + timedelta(days=1)
+        )
+        return True

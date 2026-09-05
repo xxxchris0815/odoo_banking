@@ -4,15 +4,22 @@ import pytest
 
 from account_statement_import_online_zen.lib.zen_transactions import (
     HISTORY_PATH,
+    PAYMENT_PATH,
+    WEBHOOK_PATH_PREFIX,
     ZEN_DEFAULT_API_BASE,
     ZenClient,
     ZenConfigError,
     ZenHTTPError,
     ZenTLS,
     build_ssl_context,
+    parse_webhook_events,
+    payment_unique_id,
+    public_https_base,
     requests_get_mtls,
     statement_line_from_transaction,
+    statement_lines_from_transaction,
     statement_lines_from_transactions,
+    webhook_url,
 )
 
 
@@ -65,10 +72,10 @@ def test_incoming_line_uses_booked_date_and_positive_amount():
     line = statement_line_from_transaction(SETTLED_IN)
     assert line["amount"] == 150.50
     assert line["date"] == datetime(2026, 8, 7, 11, 2, 0)
-    assert line["unique_import_id"] == SETTLED_IN["id"]
+    assert line["unique_import_id"] == payment_unique_id(SETTLED_IN["id"])
     assert line["partner_name"] == "Acme GmbH"
     assert line["account_number"] == "DE89370400440532013000"
-    assert line["payment_ref"] == "Invoice 1042"
+    assert line["payment_ref"] == "[paid] Acme GmbH — Invoice 1042"
     assert line["currency_code"] == "EUR"
 
 
@@ -83,8 +90,8 @@ def test_pending_and_rejected_are_dropped():
         [SETTLED_IN, PENDING, REJECTED, SETTLED_OUT]
     )
     assert [line["unique_import_id"] for line in lines] == [
-        SETTLED_IN["id"],
-        SETTLED_OUT["id"],
+        payment_unique_id(SETTLED_IN["id"]),
+        payment_unique_id(SETTLED_OUT["id"]),
     ]
 
 
@@ -252,3 +259,120 @@ def test_client_forwards_tls_to_http():
     client = ZenClient("k", account_id="x", tls=tls, http_get=http_get)
     client.obtain_statement_lines(datetime(2026, 1, 1), datetime(2026, 1, 2))
     assert seen["tls"] is tls
+
+
+LIVE_WEBHOOK = {
+    "paymentId": "0956cff7-edab-7066-8254-01a06c133bb1",
+    "externalId": None,
+    "direction": "IN",
+    "transactionStatus": "SETTLED",
+    "accountId": "58d85a6c-5a3c-4bd8-8078-cf0d5f9ec2db",
+}
+
+LIVE_PAYMENT = {
+    "id": "0956cff7-edab-7066-8254-01a06c133bb1",
+    "title": "EXPECTMAGIC-N5N98Y",
+    "relatedTransaction": None,
+    "createdAt": "2026-09-04T10:59:55Z",
+    "lastModifiedAt": "2026-09-04T10:59:59Z",
+    "bookedAt": "2026-09-04T10:59:56Z",
+    "status": "SETTLED",
+    "direction": "INCOMING",
+    "transactionType": "PAYMENT",
+    "amount": {"value": "246.20", "currency": "EUR"},
+    "senderFees": [],
+    "receiverFees": [
+        {
+            "amount": {"value": "0.00", "currency": "EUR"},
+            "name": "STANDARD_FEE",
+            "type": "STANDARD",
+        }
+    ],
+    "channel": "SEPA",
+    "sender": {
+        "name": "GOCARDLESS LTD",
+        "country": "GB",
+        "accountNumber": "FR7630004021180001015622692",
+        "bic": "BNPAFRPPXXX",
+    },
+    "receiver": {
+        "name": "EXPECT MAGIC LLC",
+        "country": "US",
+        "accountNumber": "LT693130010179880026",
+        "bic": "BZENLT22XXX",
+    },
+}
+
+
+def test_webhook_parses_n8n_wrapper_and_in_direction():
+    events = parse_webhook_events(
+        {
+            "body": LIVE_WEBHOOK,
+            "webhookUrl": "https://automation.example.com/webhook/zen-webhook",
+            "executionMode": "production",
+        }
+    )
+    assert events == [
+        {
+            "payment_id": LIVE_WEBHOOK["paymentId"],
+            "account_id": LIVE_WEBHOOK["accountId"],
+            "status": "SETTLED",
+            "direction": "INCOMING",
+            "external_id": None,
+        }
+    ]
+
+
+def test_live_gocardless_payout_into_zen_has_no_zero_fee_line():
+    lines = statement_lines_from_transaction(LIVE_PAYMENT)
+    assert len(lines) == 1
+    line = lines[0]
+    assert line["amount"] == 246.20
+    assert line["date"] == datetime(2026, 9, 4, 10, 59, 56)
+    assert line["partner_name"] == "GOCARDLESS LTD"
+    assert line["account_number"] == "FR7630004021180001015622692"
+    assert line["payment_ref"] == "[paid] GOCARDLESS LTD — EXPECTMAGIC-N5N98Y"
+    assert line["unique_import_id"] == payment_unique_id(LIVE_PAYMENT["id"])
+
+
+def test_outgoing_fee_is_a_separate_line():
+    paid = dict(
+        LIVE_PAYMENT,
+        id="fee-out",
+        direction="OUTGOING",
+        title="Supplier",
+        senderFees=[
+            {
+                "amount": {"value": "0.42", "currency": "EUR"},
+                "name": "STANDARD_FEE",
+                "type": "STANDARD",
+            }
+        ],
+        receiverFees=[],
+        receiver={"name": "Vendor Ltd", "accountNumber": "PL00"},
+    )
+    lines = statement_lines_from_transaction(paid)
+    assert [line["amount"] for line in lines] == [-246.20, -0.42]
+    assert lines[1]["unique_import_id"].endswith(":fee")
+    assert lines[1]["partner_name"] == "ZEN.COM"
+
+
+def test_client_loads_payment_details_from_array():
+    calls = []
+
+    def http_get(url, headers):
+        calls.append(url)
+        assert url.endswith(f"{PAYMENT_PATH}/{LIVE_PAYMENT['id']}")
+        return 200, [LIVE_PAYMENT]
+
+    client = ZenClient("k", account_id=LIVE_WEBHOOK["accountId"], http_get=http_get)
+    lines, extras = client.obtain_statement_lines_for_payment(LIVE_PAYMENT["id"])
+    assert extras == {}
+    assert lines[0]["amount"] == 246.20
+    assert any(LIVE_PAYMENT["id"] in url for url in calls)
+
+
+def test_webhook_url_is_https_per_account():
+    assert public_https_base("http://erp.example.com:8069") == "https://erp.example.com"
+    url = webhook_url("http://erp.example.com:8069", "tok-zen")
+    assert url == f"https://erp.example.com{WEBHOOK_PATH_PREFIX}/tok-zen"
