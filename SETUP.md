@@ -147,15 +147,52 @@ Zweite Währung = zweites Journal (`PPUSD`, `ZENUSD`, …).
 
 ### 6a PayPal
 
-1. Journal *PayPal EUR* bearbeiten.
+Das ist **Transaction Search** aus diesem Repo (Provider **PayPal**),
+nicht zwingend das OCA-Modul *PayPal.com*. Wenn beide installiert sind:
+**PayPal** nehmen.
+
+#### A) Keys bei PayPal holen
+
+1. [developer.paypal.com](https://developer.paypal.com) → einloggen.
+2. **Apps & Credentials** → Schalter auf **Live** (nicht Sandbox).
+3. REST-App anlegen oder die vorhandene öffnen.
+4. **Client ID** und **Secret** kopieren.
+5. Unter **Features** nur **Transaction Search** aktiv lassen, speichern.
+
+Sandbox-Keys funktionieren nicht gegen die Live-API. Umgekehrt auch nicht.
+
+#### B) Journal und Provider in Odoo
+
+1. Journal *PayPal EUR* bearbeiten (Typ Bank, eine Währung).
 2. Bank Feeds = **Online (OCA)**.
-3. Provider **PayPal.com**, speichern.
-4. Den erzeugten Provider öffnen:
-   - API Base leer lassen (Live)
-   - Username / Client ID + Password / Secret eintragen
+3. Service **PayPal** — nicht GoCardless und nicht ein zweites
+   OCA-*PayPal.com*, falls das noch in der Liste steht.
+4. Speichern, den Provider öffnen:
+   - **Client ID** = Client ID aus Schritt A4
+   - **Secret** = Secret aus Schritt A4
+   - API Base leer = Live (`https://api.paypal.com`)
+   - Sandbox nur mit Sandbox-Keys:
+     `https://api.sandbox.paypal.com`
    - Intervall z. B. 1 Stunde
-   - Statement-Modus: täglich oder monatlich
 5. Speichern.
+
+#### C) Testen
+
+1. Provider → **Pull Online Bank Statement**.
+   Die Uhrzeit im Wizard kommt von OCA; bei täglichen Auszügen zählt
+   der Kalendertag.
+2. **Show Transaction Data** zeigt nur **neue** Zeilen. Schon
+   importierte IDs kommen als `[]`.
+3. Erwartung an den Zeilen:
+   - Eingang: `[paid] Kundenname — Artikel` und daneben
+     `[fee] PayPal — TXN…`
+   - Auszahlung auf die Hausbank: `[paid] Withdrawal — …` (minus)
+   - Erstattung: eigene Zeile minus, Gebühr oft plus
+4. Denselben Zeitraum ein zweites Mal pullen: keine Duplikate
+   (`pp:tx:{transaction_id}`).
+
+Auszahlungen nicht per n8n auf dieses Journal schreiben. Die Hausbank
+bekommt den Eingang aus ihrem eigenen Auszug; Abstimmung über Geldtransit.
 
 ### 6b ZEN.COM
 
@@ -189,9 +226,9 @@ Zweite Währung = zweites Journal (`PPUSD`, `ZENUSD`, …).
    Buchungskonto = GoCardless-Clearing).
 4. Feld **Bankauszüge / Bank Feeds** = **Online (OCA)**.
 5. Im Provider-Formular das Feld **Service** auf **GoCardless Payments**
-   stellen — nicht PayPal.com und nicht das OCA-„GoCardless“ (Open Banking).
+   stellen — nicht **PayPal** und nicht das OCA-„GoCardless“ (Open Banking).
    Client ID / Secret gehören nur zu PayPal; die erscheinen, wenn Service
-   falsch auf PayPal.com steht.
+   falsch auf PayPal steht.
 6. Speichern. Odoo legt den Provider an.
 7. Den Provider-Namen anklicken (oder **Konfiguration → Online Bank
    Statement Providers** → den Eintrag zum Journal `GC` öffnen).

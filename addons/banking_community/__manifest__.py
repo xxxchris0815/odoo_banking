@@ -1,6 +1,6 @@
 {
     "name": "Community Banking Stack",
-    "version": "19.0.1.3.0",
+    "version": "19.0.1.4.0",
     "category": "Accounting",
     "summary": "Glue module for Odoo 19 Community bank feeds (PayPal, GoCardless, ZEN.COM, Jeeves)",
     "author": "Expect Magic",
@@ -10,7 +10,7 @@
         "account",
         "account_reconcile_oca",
         "account_statement_import_online",
-        "account_statement_import_online_paypal",
+        "account_statement_import_online_paypal_reporting",
         "account_statement_import_file",
         "account_statement_import_sheet_file",
         "account_statement_import_online_zen",

@@ -194,7 +194,7 @@ Odoo.sh: Extra-Addons als Git-Submodules im Repo, Branch 19.0, Deploy.
    (technisch `banking_community`).
 5. Installieren. Odoo zieht automatisch:
    - `account_reconcile_oca`
-   - `account_statement_import_online` + PayPal
+   - `account_statement_import_online` + PayPal (dieses Repo)
    - `account_statement_import_online_zen`
    - `account_statement_import_online_gocardless_payments`
    - `account_statement_import_jeeves`
@@ -229,7 +229,7 @@ Ohne den Haken fehlen Journals, Provider und der Abstimmungsbildschirm.
 Fakturierung → Konfiguration:
 
 - *Online Bank Statement Providers* ist sichtbar
-- Beim Anlegen eines Providers erscheinen **PayPal.com**, **ZEN.COM**,
+- Beim Anlegen eines Providers erscheinen **PayPal**, **ZEN.COM**,
   **GoCardless Payments**
 
 Webhook von außen (nur GoCardless):

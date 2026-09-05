@@ -21,7 +21,7 @@ dieses Repo als dünne Provider auf demselben Framework.
 ## Zielarchitektur
 
 ```
-PayPal API          ──►  OCA account_statement_import_online_paypal
+PayPal API          ──►  account_statement_import_online_paypal_reporting
 GoCardless Einzüge  ──►  account_statement_import_online_gocardless_payments
 ZEN.COM Transfers   ──►  account_statement_import_online_zen   (dieses Repo)
 Jeeves CSV          ──►  account_statement_import_jeeves       (dieses Repo)
@@ -68,13 +68,14 @@ Aus [OCA/bank-statement-import](https://github.com/OCA/bank-statement-import/tre
 - `account_statement_import_base`
 - `account_statement_import_file`
 - `account_statement_import_online`
-- `account_statement_import_online_paypal`
+- `account_statement_import_online_paypal` (optional; dieses Repo ersetzt es)
 - `account_statement_import_online_gocardless` (optional, nur bei aktivem BAD-Zugang)
 - `account_statement_import_sheet_file` (Fallback für beliebige CSVs)
 - optional `account_statement_import_camt` für echte Bank-CAMT.053
 
 Dieses Repo:
 
+- `account_statement_import_online_paypal_reporting`
 - `account_statement_import_online_zen`
 - `account_statement_import_online_gocardless_payments`
 - `account_statement_import_jeeves`
@@ -84,15 +85,35 @@ Benutzergruppe: **Vollständige Buchhaltungsfunktionen anzeigen**.
 
 ## Provider im Detail
 
-### PayPal — fertiges OCA-Modul
+### PayPal — Transaction Search (dieses Repo)
 
-1. PayPal Developer App (Live): Client ID + Secret.
-2. Bankkonto + Journal `PayPal EUR` (bzw. eine Währung pro Journal).
-3. Journal → Bank Feeds = *Online (OCA)* → Provider *PayPal.com*.
-4. Client ID / Secret setzen, historischen Pull starten, danach Cron.
+Nicht das optionale OCA-Modul *PayPal.com* brauchen. Unser Provider
+`PayPal` liest `/v1/reporting/transactions` (Live, nicht Sandbox).
 
-Nur gebuchte Transaktionen der letzten drei Jahre. Ältere Historie per
-PayPal-CSV und `account_statement_import_sheet_file`.
+1. PayPal Developer App (**Live**): Client ID + Secret, Feature
+   **Transaction Search**.
+2. Journal `PayPal EUR` (eine Währung pro Journal).
+3. Bank Feeds = *Online (OCA)* → Provider **PayPal**.
+4. Client ID ins Username-Feld, Secret ins Password-Feld. API Base leer
+   = `https://api.paypal.com`. Sandbox nur wenn du wirklich Sandbox-Keys
+   hast: `https://api.sandbox.paypal.com`.
+
+Live-Mapping (PayPal liefert `full_name` fast nie):
+
+| Ereignis | Zeile | Partner |
+| --- | --- | --- |
+| Checkout / Mobile (`T0006`, `T0011`) | `[paid] Kundenname — Live ORGASMIC` | `alternate_full_name` / Vor+Nachname |
+| PayPal-Gebühr | `[fee] PayPal — TXN…` | PayPal |
+| Auszahlung aufs Bankkonto (`T0400`) | `[paid] Withdrawal — Bankreferenz` | leer |
+| Abo / Lieferant (`T0003`) | `[paid] Spotify AB — …` | Händler, nicht der eigene Versandname |
+| Konto-Auffüllung (`T0300` / `T0700`) | `[paid] Account funding — …` | leer |
+| Erstattung (`T1107`) | `[paid] Kundenname — Refund …` | derselbe Kunde, Gebühr oft +. |
+
+`unique_import_id` = `pp:tx:{transaction_id}` bzw. `:fee`. Kein Zeitstempel
+in der ID — ein Re-Pull aktualisiert nicht doppelt.
+
+Nur die letzten drei Jahre. Ältere Historie per PayPal-CSV und
+`account_statement_import_sheet_file`. Details: SETUP.md Schritt 6a.
 
 ### GoCardless Payments — Clearing-Journal (dieses Repo)
 
