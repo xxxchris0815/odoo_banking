@@ -229,7 +229,8 @@ Date, Merchant, Amount). Auch `;` und europäische Zahlen (`-120,00`).
 - `unique_import_id` = Unique ID / Transaction ID
 - Partner: gespeicherte Jeeves-Vendor-ID, sonst Vendor-E-Mail, sonst Payee-Name
 - Lieferanten: Button *Jeeves* am Kontakt ruft `list_vendors` /
-  `create_vendor` / `update_vendor` (nicht `create_card`)
+  `create_vendor` / `update_vendor` (nicht `create_card`). Jeeves
+  braucht Telefon, Straße, PLZ, Ort und Bankland (aus der IBAN)
 - Rechnungen: MCP-`list_billpay_invoices` matcht Auszugszeilen auf
   `BILL/…` / `PROV…`. In der Lieferantenrechnungsliste 1–n markieren →
   *Jeeves Bulk-CSV herunterladen* (Jeeves-Web-Vorlage, nicht

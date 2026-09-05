@@ -192,6 +192,105 @@ def sanitize_iban(value: str | None) -> str:
     return re.sub(r"\s+", "", value or "").upper()
 
 
+ISO3_TO_ISO2 = {iso3: iso2 for iso2, iso3 in ISO2_TO_ISO3.items()}
+EMAIL_ANGLE_RE = re.compile(r"<([^<>\s]+@[^<>\s]+)>")
+EMAIL_PLAIN_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def iso2_from_country_code(code: str | None) -> str:
+    text = (code or "").strip().upper()
+    if not text:
+        return ""
+    if len(text) == 2:
+        return text if text in ISO2_TO_ISO3 else ""
+    return ISO3_TO_ISO2.get(text, "")
+
+
+def iban_country_iso2(value: str | None) -> str:
+    cleaned = sanitize_iban(value)
+    if len(cleaned) < 4 or not cleaned[:2].isalpha():
+        return ""
+    return iso2_from_country_code(cleaned[:2])
+
+
+def parse_partner_email(raw: str | None) -> str:
+    """Jeeves wants a bare address, not ``Name <email>``."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    angled = EMAIL_ANGLE_RE.search(text)
+    if angled:
+        return angled.group(1).strip()
+    if EMAIL_PLAIN_RE.match(text):
+        return text
+    return ""
+
+
+def vendor_payout(vendor: dict[str, Any], currency: str | None = None) -> dict[str, Any]:
+    details = (
+        vendor.get("vendorPaymentDetails")
+        or vendor.get("paymentInformation")
+        or vendor.get("paymentDetails")
+        or []
+    )
+    if isinstance(details, dict):
+        details = [details]
+    rows = [row for row in details if isinstance(row, dict)]
+    if currency:
+        wanted = currency.strip().upper()
+        for row in rows:
+            code = str(row.get("bankCurrencyCode") or row.get("currency") or "").upper()
+            if code == wanted:
+                return row
+    return rows[0] if rows else {}
+
+
+def contact_from_vendor(vendor: dict[str, Any] | None) -> dict[str, str]:
+    """Pull whatever contact/payout fields list_vendors actually returns."""
+    if not isinstance(vendor, dict):
+        return {}
+    payout = vendor_payout(vendor)
+    address = vendor.get("address") if isinstance(vendor.get("address"), dict) else {}
+    return {
+        "vendor_id": str(vendor.get("id") or vendor.get("vendorId") or "").strip(),
+        "email": parse_partner_email(
+            str(vendor.get("emailAddress") or vendor.get("email") or "")
+        ),
+        "phone": str(
+            vendor.get("phoneNumber") or vendor.get("phone") or ""
+        ).strip(),
+        "street": str(
+            vendor.get("streetAddress")
+            or vendor.get("street")
+            or address.get("streetAddress")
+            or address.get("street")
+            or ""
+        ).strip(),
+        "city": str(
+            vendor.get("city") or address.get("city") or ""
+        ).strip(),
+        "zip": str(
+            vendor.get("postcode")
+            or vendor.get("postalCode")
+            or vendor.get("zip")
+            or address.get("postcode")
+            or ""
+        ).strip(),
+        "state": str(vendor.get("state") or address.get("state") or "").strip(),
+        "country_iso3": str(
+            vendor.get("countryCode") or address.get("countryCode") or ""
+        ).strip(),
+        "bank_iso3": str(payout.get("bankCountryCode") or "").strip(),
+        "currency": str(
+            payout.get("bankCurrencyCode") or payout.get("currency") or ""
+        ).strip(),
+        "payment_method": str(payout.get("paymentMethod") or "").strip(),
+        "company_name": str(
+            vendor.get("companyName") or vendor.get("vendorName") or ""
+        ).strip(),
+    }
+
+
 def split_personal_name(name: str | None) -> tuple[str, str]:
     parts = [part for part in (name or "").strip().split() if part]
     if not parts:
@@ -321,28 +420,53 @@ def _payment_information(draft: JeevesVendorDraft) -> dict[str, str]:
     return info
 
 
+def missing_jeeves_requirements(draft: JeevesVendorDraft) -> list[str]:
+    missing: list[str] = []
+    if draft.entity_type == "COMPANY" and not draft.company_name.strip():
+        missing.append("company name")
+    if draft.entity_type == "PERSONAL" and not (
+        draft.first_name.strip() and draft.last_name.strip()
+    ):
+        missing.append("first and last name")
+    email = parse_partner_email(draft.email) or (draft.email or "").strip()
+    if not email or not EMAIL_PLAIN_RE.match(email):
+        missing.append("e-mail")
+    try:
+        format_jeeves_phone(draft.phone, draft.country_iso3 or draft.bank_country_iso3)
+    except JeevesVendorError:
+        missing.append("phone (+CC number)")
+    if not draft.street.strip():
+        missing.append("street")
+    if not draft.postcode.strip():
+        missing.append("ZIP")
+    if not draft.city.strip():
+        missing.append("city")
+    try:
+        iso3_from_country_code(draft.country_iso3)
+    except JeevesVendorError:
+        missing.append("country")
+    try:
+        iso3_from_country_code(draft.bank_country_iso3)
+    except JeevesVendorError:
+        missing.append("bank country")
+    if not sanitize_iban(draft.iban) and not (draft.account_number or "").strip():
+        missing.append("IBAN or account number")
+    if not (draft.currency or "").strip():
+        missing.append("currency")
+    return missing
+
+
 def validate_draft(draft: JeevesVendorDraft, *, for_update: bool = False) -> None:
     if for_update and not draft.vendor_id:
         raise JeevesVendorError("Jeeves vendor id is required to update")
     if draft.entity_type not in {"COMPANY", "PERSONAL"}:
         raise JeevesVendorError("Jeeves vendor type must be COMPANY or PERSONAL")
-    if draft.entity_type == "COMPANY" and not draft.company_name.strip():
-        raise JeevesVendorError("Company name is required")
-    if draft.entity_type == "PERSONAL" and not (
-        draft.first_name.strip() and draft.last_name.strip()
-    ):
-        raise JeevesVendorError("First and last name are required")
-    if not draft.email or "@" not in draft.email:
-        raise JeevesVendorError("E-mail is required for a Jeeves vendor")
-    format_jeeves_phone(draft.phone, draft.country_iso3 or draft.bank_country_iso3)
-    if not draft.street.strip() or not draft.city.strip() or not draft.postcode.strip():
-        raise JeevesVendorError("Street, city and ZIP are required")
-    iso3_from_country_code(draft.country_iso3)
-    iso3_from_country_code(draft.bank_country_iso3)
-    if not sanitize_iban(draft.iban) and not (draft.account_number or "").strip():
-        raise JeevesVendorError("IBAN or account number is required")
-    if not (draft.currency or "").strip():
-        raise JeevesVendorError("Account currency is required")
+    missing = missing_jeeves_requirements(draft)
+    if missing:
+        raise JeevesVendorError(
+            "Jeeves needs: " + ", ".join(missing) + "."
+        )
+    draft.email = parse_partner_email(draft.email) or draft.email.strip()
 
 
 def build_create_initial_arguments(draft: JeevesVendorDraft) -> dict[str, Any]:

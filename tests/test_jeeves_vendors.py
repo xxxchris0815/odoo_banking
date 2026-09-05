@@ -14,9 +14,14 @@ from account_statement_import_jeeves.lib.jeeves_vendors import (
     build_update_arguments,
     default_payment_method,
     extract_created_vendor_id,
+    contact_from_vendor,
     extract_vendor_cache_id,
     format_jeeves_phone,
+    iban_country_iso2,
+    iso2_from_country_code,
     iso3_from_country_code,
+    missing_jeeves_requirements,
+    parse_partner_email,
     partner_phone,
     match_vendor,
     sanitize_iban,
@@ -111,6 +116,14 @@ def test_unwraps_list_vendors_envelope():
 def test_country_phone_iban_helpers():
     assert iso3_from_country_code("DE") == "DEU"
     assert iso3_from_country_code("hrv") == "HRV"
+    assert iso2_from_country_code("LTU") == "LT"
+    assert iban_country_iso2("LT20 3130 0101 7615 8339") == "LT"
+    assert iban_country_iso2("DE20642914200026823012") == "DE"
+    assert parse_partner_email(
+        "Wachstumsakademie Maximus <info@wachstumsakademie.de>"
+    ) == "info@wachstumsakademie.de"
+    assert parse_partner_email("info@naturrauch.de") == "info@naturrauch.de"
+    assert parse_partner_email("kein mail") == ""
     assert default_payment_method("EUR", "DEU") == "SEPA"
     assert default_payment_method("USD", "USA") == "ACH"
     assert format_jeeves_phone("+49 15146575973", "DE") == "+49 15146575973"
@@ -118,6 +131,38 @@ def test_country_phone_iban_helpers():
     assert format_jeeves_phone("15146575973", "DE") == "+49 15146575973"
     assert sanitize_iban("de89 3704 0044 0532 0130 00") == "DE89370400440532013000"
     assert split_personal_name("Klara Hoffmann") == ("Klara", "Hoffmann")
+
+
+def test_lists_all_missing_jeeves_fields():
+    missing = missing_jeeves_requirements(
+        JeevesVendorDraft(entity_type="COMPANY", company_name="X")
+    )
+    assert "e-mail" in missing
+    assert "phone (+CC number)" in missing
+    assert "street" in missing
+    assert "ZIP" in missing
+    assert "city" in missing
+    assert "bank country" in missing
+
+
+def test_reads_bank_country_from_list_vendors():
+    contact = contact_from_vendor(
+        {
+            "id": "98801079-03b5-4359-bc86-b1607ea94836",
+            "emailAddress": "Rapid Scaling <info@wachstumsakademie.de>",
+            "phoneNumber": "+49 15146575973",
+            "streetAddress": "Hauptstrasse 1",
+            "city": "Berlin",
+            "postcode": "10115",
+            "countryCode": "DEU",
+            "vendorPaymentDetails": [
+                {"bankCountryCode": "LTU", "bankCurrencyCode": "EUR", "paymentMethod": "SEPA"}
+            ],
+        }
+    )
+    assert contact["bank_iso3"] == "LTU"
+    assert contact["email"] == "info@wachstumsakademie.de"
+    assert contact["street"] == "Hauptstrasse 1"
 
 
 def test_create_and_update_payloads():
@@ -141,7 +186,7 @@ def test_rejects_incomplete_draft():
     try:
         build_create_initial_arguments(_draft(email=""))
     except JeevesVendorError as error:
-        assert "E-mail" in str(error)
+        assert "e-mail" in str(error)
     else:
         raise AssertionError("expected missing email to fail")
 

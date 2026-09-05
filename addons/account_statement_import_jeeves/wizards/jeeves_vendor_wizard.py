@@ -13,11 +13,16 @@ from ..lib.jeeves_vendors import (
     JeevesVendorDraft,
     JeevesVendorError,
     PAYMENT_METHODS,
+    contact_from_vendor,
     default_payment_method,
     format_jeeves_phone,
+    iban_country_iso2,
+    iso2_from_country_code,
     iso3_from_country_code,
-    partner_phone,
     match_vendor,
+    missing_jeeves_requirements,
+    parse_partner_email,
+    partner_phone,
     sanitize_iban,
     split_personal_name,
 )
@@ -30,6 +35,7 @@ class JeevesVendorWizard(models.TransientModel):
     partner_id = fields.Many2one("res.partner", required=True, ondelete="cascade")
     vendor_id = fields.Char(string="Jeeves vendor id")
     match_note = fields.Char(readonly=True)
+    missing_note = fields.Char(readonly=True)
     entity_type = fields.Selection(
         [("COMPANY", "Company"), ("PERSONAL", "Person")],
         required=True,
@@ -59,9 +65,12 @@ class JeevesVendorWizard(models.TransientModel):
         return self.partner_id.commercial_partner_id or self.partner_id
 
     def _country(self, code):
-        if not code:
+        iso2 = iso2_from_country_code(code) if code else ""
+        if not iso2:
+            iso2 = (code or "").strip().upper()
+        if not iso2 or len(iso2) != 2:
             return self.env["res.country"]
-        return self.env["res.country"].search([("code", "=", code)], limit=1)
+        return self.env["res.country"].search([("code", "=", iso2)], limit=1)
 
     def _currency(self, name):
         if not name:
@@ -75,17 +84,22 @@ class JeevesVendorWizard(models.TransientModel):
         bank = partner.bank_ids[:1]
         acc = sanitize_iban(bank.acc_number) if bank else ""
         country = partner.country_id or self._country("DE")
-        bank_country = bank.bank_id.country if bank and bank.bank_id else country
+        bank_country = self._country(iban_country_iso2(acc))
+        if not bank_country and bank and bank.bank_id and bank.bank_id.country:
+            bank_country = bank.bank_id.country
+        if not bank_country:
+            bank_country = country
         currency = (
             bank.currency_id
             if bank and bank.currency_id
             else partner.company_id.currency_id or self.env.company.currency_id
         )
         iso2 = country.code or "DE"
-        iso3 = iso3_from_country_code(iso2)
-        bank_iso3 = iso3_from_country_code(
-            (bank_country.code if bank_country else iso2) or iso2
-        )
+        bank_iso2 = (bank_country.code if bank_country else iso2) or iso2
+        try:
+            bank_iso3 = iso3_from_country_code(bank_iso2)
+        except JeevesVendorError:
+            bank_iso3 = ""
         phone = partner_phone(partner)
         try:
             phone = format_jeeves_phone(phone, iso2) if phone else ""
@@ -98,24 +112,95 @@ class JeevesVendorWizard(models.TransientModel):
             "company_name": partner.name if company else False,
             "first_name": False if company else first,
             "last_name": False if company else last,
-            "email": partner.email or False,
+            "email": parse_partner_email(partner.email) or False,
             "phone": phone or False,
             "street": " ".join(
                 part for part in (partner.street, partner.street2) if part
             )
             or False,
             "city": partner.city or False,
-            "state": partner.state_id.name if partner.state_id else False,
+            "state": (partner.state_id.name if partner.state_id else False) or "n/a",
             "zip": partner.zip or False,
             "country_id": country.id if country else False,
             "bank_country_id": bank_country.id if bank_country else False,
             "currency_id": currency.id if currency else False,
-            "payment_method": default_payment_method(currency.name if currency else "EUR", bank_iso3),
+            "payment_method": default_payment_method(
+                currency.name if currency else "EUR", bank_iso3
+            ),
             "iban": acc or False,
             "account_name": (bank.acc_holder_name if bank else False) or partner.name,
             "swift": (bank.bank_id.bic if bank and bank.bank_id else False),
             "bank_name": (bank.bank_id.name if bank and bank.bank_id else False),
         }
+
+    def _merge_jeeves_vendor(self, values, vendor):
+        contact = contact_from_vendor(vendor)
+        if not values.get("vendor_id") and contact.get("vendor_id"):
+            values["vendor_id"] = contact["vendor_id"]
+        if not values.get("email") and contact.get("email"):
+            values["email"] = contact["email"]
+        if not values.get("phone") and contact.get("phone"):
+            values["phone"] = contact["phone"]
+        if not values.get("street") and contact.get("street"):
+            values["street"] = contact["street"]
+        if not values.get("city") and contact.get("city"):
+            values["city"] = contact["city"]
+        if not values.get("zip") and contact.get("zip"):
+            values["zip"] = contact["zip"]
+        if (not values.get("state") or values.get("state") == "n/a") and contact.get(
+            "state"
+        ):
+            values["state"] = contact["state"]
+        country = self._country(contact.get("country_iso3"))
+        if country and not values.get("country_id"):
+            values["country_id"] = country.id
+        bank_country = self._country(contact.get("bank_iso3"))
+        if bank_country and not values.get("bank_country_id"):
+            values["bank_country_id"] = bank_country.id
+        currency = self._currency(contact.get("currency"))
+        if currency and not values.get("currency_id"):
+            values["currency_id"] = currency.id
+        if contact.get("payment_method"):
+            values["payment_method"] = contact["payment_method"]
+        return values
+
+    def _missing_note(self, values):
+        country = self.env["res.country"].browse(values.get("country_id") or 0)
+        bank_country = self.env["res.country"].browse(values.get("bank_country_id") or 0)
+        currency = self.env["res.currency"].browse(values.get("currency_id") or 0)
+        try:
+            country_iso3 = iso3_from_country_code(country.code if country else "")
+        except JeevesVendorError:
+            country_iso3 = ""
+        try:
+            bank_iso3 = iso3_from_country_code(
+                bank_country.code if bank_country else ""
+            )
+        except JeevesVendorError:
+            bank_iso3 = ""
+        draft = JeevesVendorDraft(
+            entity_type=values.get("entity_type") or "COMPANY",
+            company_name=values.get("company_name") or "",
+            first_name=values.get("first_name") or "",
+            last_name=values.get("last_name") or "",
+            email=values.get("email") or "",
+            phone=values.get("phone") or "",
+            street=values.get("street") or "",
+            city=values.get("city") or "",
+            postcode=values.get("zip") or "",
+            country_iso3=country_iso3,
+            bank_country_iso3=bank_iso3,
+            currency=currency.name if currency else "",
+            iban=values.get("iban") or "",
+            account_number=values.get("account_number") or "",
+        )
+        missing = missing_jeeves_requirements(draft)
+        if not missing:
+            return False
+        return self.env._(
+            "Jeeves cannot create or update this vendor without: %s.",
+            ", ".join(missing),
+        )
 
     @api.model
     def default_get(self, fields_list):
@@ -128,34 +213,41 @@ class JeevesVendorWizard(models.TransientModel):
             partner = self.env["res.partner"].browse(int(partner_id))
         if partner:
             values.update(self._values_from_partner(partner))
-            note, vendor_id = self._lookup_existing(partner, values)
+            note, vendor_id, vendor = self._lookup_existing(partner, values)
+            if vendor:
+                self._merge_jeeves_vendor(values, vendor)
             if vendor_id and not values.get("vendor_id"):
                 values["vendor_id"] = vendor_id
             if note:
                 values["match_note"] = note
+            values["missing_note"] = self._missing_note(values)
         return values
 
     def _lookup_existing(self, partner, values):
         try:
             client = self._jeeves_client()
         except (UserError, JeevesMCPConfigError, JeevesMCPError):
-            return False, False
-        email = values.get("email") or partner.email or ""
+            return False, False, None
+        email = values.get("email") or parse_partner_email(partner.email) or ""
         name = partner.name or ""
+        stored = (partner.jeeves_vendor_id or values.get("vendor_id") or "").strip()
         found = None
         try:
-            if email and "@" in email:
+            if stored:
+                found = match_vendor(
+                    client.list_vendors(stored), vendor_id=stored
+                ) or match_vendor(client.list_vendors(name), vendor_id=stored)
+            if not found and email and "@" in email:
                 found = match_vendor(client.list_vendors(email), email=email)
             if not found and name:
                 found = match_vendor(client.list_vendors(name), name=name)
         except (JeevesMCPConfigError, JeevesMCPError):
-            return False, False
+            return False, False, None
         if not found:
-            return False, False
+            return False, False, None
         vendor_id = str(found.get("id") or "").strip()
-        stored = (partner.jeeves_vendor_id or "").strip()
         if stored and stored == vendor_id:
-            return False, vendor_id
+            return False, vendor_id, found
         if stored and stored != vendor_id:
             return (
                 self.env._(
@@ -165,6 +257,7 @@ class JeevesVendorWizard(models.TransientModel):
                     vendor=vendor_id,
                 ),
                 stored,
+                found,
             )
         return (
             self.env._(
@@ -173,6 +266,7 @@ class JeevesVendorWizard(models.TransientModel):
                 name=found.get("vendorName") or name,
             ),
             vendor_id,
+            found,
         )
 
     def _jeeves_client(self):
@@ -184,18 +278,34 @@ class JeevesVendorWizard(models.TransientModel):
             http_request=default_http_request,
         )
 
+    @api.onchange("iban")
+    def _onchange_iban(self):
+        iso2 = iban_country_iso2(self.iban)
+        country = self._country(iso2)
+        if country:
+            self.bank_country_id = country
+            currency = self.currency_id.name if self.currency_id else "EUR"
+            try:
+                self.payment_method = default_payment_method(
+                    currency, iso3_from_country_code(iso2)
+                )
+            except JeevesVendorError:
+                pass
+
     def _draft(self):
         self.ensure_one()
         partner = self._jeeves_partner()
         country = self.country_id or partner.country_id
-        bank_country = self.bank_country_id or country
+        bank_country = self.bank_country_id or self._country(
+            iban_country_iso2(self.iban)
+        ) or country
         try:
             return JeevesVendorDraft(
                 entity_type=self.entity_type,
                 company_name=self.company_name or partner.name or "",
                 first_name=self.first_name or "",
                 last_name=self.last_name or "",
-                email=self.email or "",
+                email=parse_partner_email(self.email) or (self.email or ""),
                 phone=self.phone or "",
                 street=self.street or "",
                 city=self.city or "",
@@ -216,6 +326,25 @@ class JeevesVendorWizard(models.TransientModel):
             )
         except JeevesVendorError as error:
             raise UserError(str(error)) from error
+
+    def _write_back_partner(self):
+        partner = self._jeeves_partner()
+        values = {}
+        if not (partner.street or "").strip() and self.street:
+            values["street"] = self.street
+        if not (partner.zip or "").strip() and self.zip:
+            values["zip"] = self.zip
+        if not (partner.city or "").strip() and self.city:
+            values["city"] = self.city
+        if not partner.country_id and self.country_id:
+            values["country_id"] = self.country_id.id
+        cleaned = parse_partner_email(self.email)
+        if cleaned and parse_partner_email(partner.email) != cleaned:
+            values["email"] = cleaned
+        if "phone" in partner._fields and not partner_phone(partner) and self.phone:
+            values["phone"] = self.phone
+        if values:
+            partner.sudo().write(values)
 
     def _remember_vendor_id(self, vendor_id):
         partner = self._jeeves_partner()
@@ -265,6 +394,7 @@ class JeevesVendorWizard(models.TransientModel):
         except (JeevesVendorError, JeevesMCPConfigError, JeevesMCPError) as error:
             raise UserError(str(error)) from error
         self._remember_vendor_id(vendor_id)
+        self._write_back_partner()
         return self._notify(message)
 
     def action_link(self):
