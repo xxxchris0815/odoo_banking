@@ -230,8 +230,24 @@ class OnlineBankStatementProviderZen(models.Model):
         filtered = self._zen_filter_lines(lines)
         if not filtered:
             _logger.info(
-                "ZEN webhook payment %s produced no new statement lines",
+                "ZEN webhook payment %s produced no statement lines",
                 payment_id,
+            )
+            return True
+        Line = self.env["account.bank.statement.line"].sudo()
+        already = [
+            line["unique_import_id"]
+            for line in filtered
+            if line.get("unique_import_id")
+            and Line.search(
+                [("unique_import_id", "=", line["unique_import_id"])], limit=1
+            )
+        ]
+        if len(already) == len(filtered):
+            _logger.info(
+                "ZEN webhook payment %s already on the journal (%s)",
+                payment_id,
+                ", ".join(already),
             )
             return True
         dates = [line["date"] for line in filtered]
@@ -242,6 +258,6 @@ class OnlineBankStatementProviderZen(models.Model):
             "ZEN webhook booked payment %s (%s lines) on %s",
             payment_id,
             len(filtered),
-            statement.name if statement else "existing-or-empty",
+            statement.name if statement else "statement-updated",
         )
         return True

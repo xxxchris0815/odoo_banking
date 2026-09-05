@@ -175,7 +175,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Community Banking Stack | `banking_community` | **19.0.1.8.0** |
 | PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.4.0** |
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.3.0** |
-| Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.10.0** |
+| Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.11.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -333,6 +333,16 @@ Der Stub enthält nur `paymentId` / `accountId` / `transactionStatus`.
 Odoo holt danach `GET /payments/v1.0/{paymentId}`. Nur `SETTLED` wird
 gebucht. `unique_import_id` = `zen:pay:{id}`. Gebühren > 0 werden eigene
 Zeilen (`zen:pay:{id}:fee`).
+
+Webhook prüfen:
+
+1. GET auf die Odoo-URL im Browser — Text `ok`.
+2. n8n HTTP-Node: Status **200**, Response-Body `ok`. 404 = Token falsch,
+   500 = mTLS/API beim Nachladen der Zahlung.
+3. Container-Log: `docker logs odoo_app 2>&1 | grep -i zen`
+   Erfolg: `ZEN webhook payment=…` und `ZEN webhook booked payment=…`.
+4. Journal *ZEN EUR*: Zeile `[paid] …`, `unique_import_id` `zen:pay:{id}`.
+   Zweiter Hook dieselbe ID: 200 und `already on the journal` — kein Duplikat.
 
 ### 6c GoCardless Payments — Daten eintragen
 
