@@ -191,10 +191,11 @@ Odoo.sh: Extra-Addons als Git-Submodules im Repo, Branch 19.0, Deploy.
 2. Einstellungen → *Entwicklermodus aktivieren*.
 3. Apps → Menü **Apps-Liste aktualisieren** (sonst erscheint das neue Modul nicht).
 4. Filter *Apps* entfernen, suchen nach **Community Banking Stack**
-   (technisch `banking_community`).
+   (technisch `banking_community`) oder **PayPal Bank Feed (Expect Magic)**
+   (technisch `account_statement_import_online_paypal_reporting`).
 5. Installieren. Odoo zieht automatisch:
    - `account_reconcile_oca`
-   - `account_statement_import_online` + PayPal (dieses Repo)
+   - `account_statement_import_online` + PayPal-Reporting (dieses Repo)
    - `account_statement_import_online_zen`
    - `account_statement_import_online_gocardless_payments`
    - `account_statement_import_jeeves`

@@ -123,7 +123,7 @@ class OnlineBankStatementProviderPayPal(models.Model):
             [("name", "=", "account_statement_import_online_paypal_reporting")],
             limit=1,
         )
-        version = module.latest_version or module.installed_version or "19.0.1.2.0"
+        version = module.latest_version or module.installed_version or "19.0.1.3.0"
         for rec in self:
             rec.paypal_module_version = version
 

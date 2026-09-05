@@ -164,7 +164,20 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Anzeigename | Technischer Name | Version |
 | --- | --- | --- |
 | Community Banking Stack | `banking_community` | **19.0.1.6.0** |
-| Online Bank Statements: PayPal | `account_statement_import_online_paypal_reporting` | **19.0.1.2.0**, Autor Expect Magic |
+| PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.3.0** |
+
+Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
+ausmachen (sonst sieht man nur `application=True`). Danach
+Apps-Liste aktualisieren. Liegt der Ordner nicht auf der Platte,
+kennt Odoo das Modul nicht:
+
+```bash
+ls /opt/odoo/extra-addons/odoo_banking/addons/account_statement_import_online_paypal_reporting/__manifest__.py
+docker exec odoo_app ls /opt/odoo/extra-addons/odoo_banking/addons/account_statement_import_online_paypal_reporting/__manifest__.py
+```
+
+Ohne diese Datei: `git pull` im Repo, Container neu starten, dann erst
+die Apps-Liste.
 
 Nicht das OCA-Modul `account_statement_import_online_paypal` (Service
 *PayPal.com*, Autor CorporateHub/OCA) — das legt die zweite
