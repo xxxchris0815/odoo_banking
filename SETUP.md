@@ -177,7 +177,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.6.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.13.0** |
 | Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.12.0** |
-| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.6.0** |
+| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.7.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -444,10 +444,12 @@ Zwei Wege, **einen** pro Zeitraum, nicht beide (sonst Duplikate):
   zu einer Jeeves-Bill-Pay-Rechnung passen.
 - Auf der Lieferantenrechnung: *Sync Jeeves invoice* schreibt
   `jeeves_invoice_id`, Status und `JPP…`.
-- Zahlen aus Odoo: offene Rechnungen markieren → Aktion
-  **Export Jeeves bulk payments**. Das ist dieselbe Vorlage wie in der
-  Jeeves-Web-UI (*Bulk Payments*), kein Kontoauszug und nicht
-  `file_upload`.
+- Zahlen aus Odoo: unter **Lieferantenrechnungen** 1–n Zeilen
+  markieren → **Jeeves Bulk-CSV** (Listen-Button) oder Aktion
+  **Jeeves Bulk-CSV herunterladen**. Es öffnet sich ein Dialog mit der
+  Datei `Bulk-Payments-YYYY-MM-DD.csv` — dieselbe Spaltenvorlage wie
+  in der Jeeves-Web-UI. Datei speichern und in Jeeves unter Bulk
+  Payments importieren. Kein Kontoauszug, nicht `file_upload`.
 - `file_upload` ist nur für Spesenbelege (PDF/JPEG/PNG/GIF, 10 MB) und
   eine `uploadId` für `add_reimbursement`. Odoo ruft das nicht auf.
 

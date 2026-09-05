@@ -24,10 +24,9 @@ class AccountStatementImport(models.TransientModel):
             raise UserError(
                 self.env._(
                     "This file is a Jeeves Bulk Payments template, not a bank "
-                    "statement. Pay it in the Jeeves web app, or create it from "
-                    "vendor bills via Action → Export Jeeves bulk payments. "
-                    "Import Activity and Exports (or use the daily MCP pull) "
-                    "for cash lines."
+                    "statement. Create it from vendor bills via Jeeves Bulk-CSV, "
+                    "then import it in the Jeeves web app. For cash lines use "
+                    "Activity and Exports or the daily MCP pull."
                 )
             )
         if detect_jeeves_csv(data_file):

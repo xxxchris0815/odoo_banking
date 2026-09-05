@@ -1,6 +1,6 @@
 {
     "name": "Bank Statement Import: Jeeves CSV",
-    "version": "19.0.1.6.0",
+    "version": "19.0.1.7.0",
     "category": "Accounting",
     "summary": "Jeeves CSV/MCP pull, vendor sync, and bill matching",
     "author": "Expect Magic",
@@ -16,6 +16,7 @@
         "views/account_move.xml",
         "views/online_bank_statement_provider.xml",
         "wizards/jeeves_vendor_wizard_views.xml",
+        "wizards/jeeves_bulk_export_wizard_views.xml",
     ],
     "installable": True,
 }

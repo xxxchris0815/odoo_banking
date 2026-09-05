@@ -1,6 +1,8 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+import base64
 import logging
+from datetime import date
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
@@ -177,55 +179,85 @@ class AccountMove(models.Model):
             },
         }
 
-    def action_jeeves_export_bulk_csv(self):
-        bills = self.filtered(lambda move: move.move_type == "in_invoice")
-        if not bills:
-            raise UserError(self.env._("Select posted vendor bills first."))
+    def _jeeves_partner_account_number(self, partner, currency):
+        banks = partner.bank_ids.filtered(lambda bank: bank.acc_number)
+        if not banks:
+            return ""
+        currency_name = (currency.name or "").upper()
+        if currency_name:
+            for bank in banks:
+                bank_ccy = bank.currency_id.name if bank.currency_id else ""
+                if bank_ccy and bank_ccy.upper() == currency_name:
+                    return bank.acc_number
+        return banks[0].acc_number
+
+    def _jeeves_bulk_export_rows(self):
         rows = []
-        skipped = 0
-        for move in bills:
-            if move.state != "posted":
-                skipped += 1
-                continue
-            residual = move.amount_residual
-            if residual <= 0 and not self.env.context.get("jeeves_bulk_include_paid"):
-                skipped += 1
+        for move in self:
+            if move.move_type != "in_invoice":
                 continue
             partner = move.partner_id.commercial_partner_id
-            bank = partner.bank_ids[:1]
             currency = move.currency_id or move.company_currency_id
+            amount = move.amount_residual
+            if amount <= 0:
+                amount = move.amount_total
+            invoice_id = (
+                move.name
+                if move.state == "posted" and move.name != "/"
+                else (move.ref or "")
+            )
             rows.append(
                 {
-                    "vendor_name": partner.name,
-                    "account_number": bank.acc_number if bank else "",
-                    "currency": currency.name,
-                    "amount": residual or move.amount_total,
-                    "memo": move.payment_reference or move.ref or move.name or "Bulk payment",
-                    "invoice_id": move.name,
+                    "vendor_name": partner.name or "",
+                    "account_number": self._jeeves_partner_account_number(
+                        partner, currency
+                    ),
+                    "currency": currency.name if currency else "",
+                    "amount": amount,
+                    "memo": move.payment_reference or move.ref or "Bulk payment",
+                    "invoice_id": invoice_id,
                     "invoice_date": format_bulk_date(move.invoice_date),
                     "invoice_due_date": format_bulk_date(move.invoice_date_due),
                 }
             )
-        if not rows:
+        return rows
+
+    def action_jeeves_export_bulk_csv(self):
+        bills = self.filtered(lambda move: move.move_type == "in_invoice")
+        if not bills:
             raise UserError(
                 self.env._(
-                    "No open vendor bills to export. Posted bills with a residual "
-                    "amount are required."
+                    "Select one or more vendor bills (Lieferantenrechnungen), "
+                    "then export again."
                 )
             )
+        rows = bills._jeeves_bulk_export_rows()
+        if not rows:
+            raise UserError(self.env._("No vendor bills in the selection."))
+        missing_bank = sum(1 for row in rows if not row.get("account_number"))
         content = build_bulk_payments_csv(rows)
-        attachment = self.env["ir.attachment"].create(
+        filename = f"Bulk-Payments-{date.today().isoformat()}.csv"
+        note = self.env._("%s bill(s) in the Jeeves Bulk Payments file.", len(rows))
+        if missing_bank:
+            note = self.env._(
+                "%s bill(s) in the file. %s without IBAN on the contact — "
+                "fill Account number before importing in Jeeves.",
+                len(rows),
+                missing_bank,
+            )
+        wizard = self.env["jeeves.bulk.export.wizard"].create(
             {
-                "name": "jeeves_bulk_payments.csv",
-                "type": "binary",
-                "raw": content.encode("utf-8"),
-                "mimetype": "text/csv",
-                "res_model": "account.move",
-                "res_id": bills[0].id,
+                "filename": filename,
+                "data": base64.b64encode(content.encode("utf-8")),
+                "line_count": len(rows),
+                "note": note,
             }
         )
         return {
-            "type": "ir.actions.act_url",
-            "url": f"/web/content/{attachment.id}?download=true",
-            "target": "self",
+            "type": "ir.actions.act_window",
+            "name": self.env._("Jeeves Bulk Payments"),
+            "res_model": "jeeves.bulk.export.wizard",
+            "res_id": wizard.id,
+            "view_mode": "form",
+            "target": "new",
         }

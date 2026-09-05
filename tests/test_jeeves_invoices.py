@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from account_statement_import_jeeves.lib.jeeves_invoices import (
@@ -7,6 +7,7 @@ from account_statement_import_jeeves.lib.jeeves_invoices import (
     detect_jeeves_bulk_payments_csv,
     enrich_statement_line_with_invoice,
     format_bulk_account_number,
+    format_bulk_date,
     match_transaction_to_invoice,
     unwrap_mcp_invoices,
 )
@@ -216,4 +217,51 @@ def test_bulk_template_is_not_a_bank_statement():
     assert "BILL/2026/09/0002" in csv_text
     assert format_bulk_account_number("DE20 6429 1420 0026 8230 12") == (
         "'DE20642914200026823012"
+    )
+    header = (
+        '"Vendor name","Account number","Vendor currency (mandatory)",'
+        '"Amount (mandatory)","Memo (mandatory)","Invoice ID (optional)",'
+        '"Invoice Date (optional)","Invoice Due Date (optional)"'
+    )
+    assert csv_text.splitlines()[0] == header
+    assert fixture.read_text().splitlines()[0] == header
+    assert csv_text.splitlines()[1] == (
+        '"naturrauch","\'DE20642914200026823012","EUR","14.00","RE4583",'
+        '"BILL/2026/09/0002","03/09/2026","10/09/2026"'
+    )
+
+
+def test_bulk_export_quotes_every_field_like_jeeves_template():
+    csv_text = build_bulk_payments_csv(
+        [
+            {
+                "vendor_name": "LALAVANDA vl. Dajana Grgic",
+                "account_number": "HR93 2340 0091 1607 3508 7",
+                "currency": "eur",
+                "amount": 325,
+                "memo": "Bulk payment",
+                "invoice_id": "BILL/2026/09/0001",
+                "invoice_date": format_bulk_date(date(2026, 9, 3)),
+                "invoice_due_date": format_bulk_date(date(2026, 9, 10)),
+            },
+            {
+                "vendor_name": "Expect Magic LLC (zen)",
+                "account_number": "LT693130010179880026",
+                "currency": "EUR",
+                "amount": 1,
+                "memo": "",
+                "invoice_id": "",
+                "invoice_date": "",
+                "invoice_due_date": "",
+            },
+        ]
+    )
+    lines = csv_text.splitlines()
+    assert lines[1] == (
+        '"LALAVANDA vl. Dajana Grgic","\'HR9323400091160735087","EUR","325.00",'
+        '"Bulk payment","BILL/2026/09/0001","03/09/2026","10/09/2026"'
+    )
+    assert lines[2] == (
+        '"Expect Magic LLC (zen)","\'LT693130010179880026","EUR","1.00",'
+        '"Bulk payment","","",""'
     )
