@@ -25,6 +25,7 @@ from account_statement_import_jeeves.lib.jeeves_vendors import (
     partner_phone,
     match_vendor,
     sanitize_iban,
+    usable_account_number,
     split_personal_name,
     unwrap_mcp_vendors,
 )
@@ -163,6 +164,11 @@ def test_reads_bank_country_from_list_vendors():
     assert contact["bank_iso3"] == "LTU"
     assert contact["email"] == "info@wachstumsakademie.de"
     assert contact["street"] == "Hauptstrasse 1"
+    assert usable_account_number("****3012") == ""
+    assert usable_account_number("LT203130010176158339") == "LT203130010176158339"
+    assert contact_from_vendor(
+        {"vendorPaymentDetails": [{"accountNumber": "****3012", "iban": ""}]}
+    )["iban"] == ""
 
 
 def test_create_and_update_payloads():
@@ -264,6 +270,55 @@ def test_partner_phone_skips_missing_mobile_field():
     assert partner_phone(only_mobile) == "+49 160 111"
     empty = _FakePartner({"phone": True}, phone=False)
     assert partner_phone(empty) == ""
+
+
+def test_find_vendor_prefers_get_vendor_then_list():
+    calls = []
+
+    def http_request(method, url, headers, data):
+        payload = data if isinstance(data, str) else data.decode()
+        calls.append(payload)
+        if '"method": "initialize"' in payload or '"method":"initialize"' in payload:
+            return 200, {"Content-Type": "application/json"}, '{"jsonrpc":"2.0","id":1,"result":{}}'
+        if "notifications/initialized" in payload:
+            return 202, {}, ""
+        body = json.loads(payload)
+        name = body["params"]["name"]
+        if name == "get_vendor":
+            return 200, {"Content-Type": "application/json"}, json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(
+                                    {
+                                        "id": "98801079-03b5-4359-bc86-b1607ea94836",
+                                        "emailAddress": "info@wachstumsakademie.de",
+                                        "phoneNumber": "+49 15146575973",
+                                        "streetAddress": "Hauptstrasse 1",
+                                        "city": "Berlin",
+                                        "postcode": "10115",
+                                        "countryCode": "DEU",
+                                        "vendorPaymentDetails": [
+                                            {"bankCountryCode": "LTU", "bankCurrencyCode": "EUR"}
+                                        ],
+                                    }
+                                ),
+                            }
+                        ]
+                    },
+                }
+            )
+        raise AssertionError(name)
+
+    client = JeevesMCPClient("key", http_request=http_request)
+    found = client.find_vendor(vendor_id="98801079-03b5-4359-bc86-b1607ea94836")
+    assert found["phoneNumber"] == "+49 15146575973"
+    assert found["vendorPaymentDetails"][0]["bankCountryCode"] == "LTU"
+    assert any("get_vendor" in payload for payload in calls)
 
 
 def test_still_refuses_card_and_payment_tools():

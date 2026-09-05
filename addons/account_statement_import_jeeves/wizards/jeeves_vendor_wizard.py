@@ -19,7 +19,6 @@ from ..lib.jeeves_vendors import (
     iban_country_iso2,
     iso2_from_country_code,
     iso3_from_country_code,
-    match_vendor,
     missing_jeeves_requirements,
     parse_partner_email,
     partner_phone,
@@ -133,35 +132,51 @@ class JeevesVendorWizard(models.TransientModel):
             "bank_name": (bank.bank_id.name if bank and bank.bank_id else False),
         }
 
-    def _merge_jeeves_vendor(self, values, vendor):
+    def _values_from_jeeves_vendor(self, vendor):
+        """Jeeves wins for every field it actually returns."""
         contact = contact_from_vendor(vendor)
-        if not values.get("vendor_id") and contact.get("vendor_id"):
+        values = {}
+        if contact.get("vendor_id"):
             values["vendor_id"] = contact["vendor_id"]
-        if not values.get("email") and contact.get("email"):
+        if contact.get("entity_type"):
+            values["entity_type"] = contact["entity_type"]
+        if contact.get("company_name"):
+            values["company_name"] = contact["company_name"]
+        if contact.get("first_name"):
+            values["first_name"] = contact["first_name"]
+        if contact.get("last_name"):
+            values["last_name"] = contact["last_name"]
+        if contact.get("email"):
             values["email"] = contact["email"]
-        if not values.get("phone") and contact.get("phone"):
+        if contact.get("phone"):
             values["phone"] = contact["phone"]
-        if not values.get("street") and contact.get("street"):
+        if contact.get("street"):
             values["street"] = contact["street"]
-        if not values.get("city") and contact.get("city"):
+        if contact.get("city"):
             values["city"] = contact["city"]
-        if not values.get("zip") and contact.get("zip"):
+        if contact.get("zip"):
             values["zip"] = contact["zip"]
-        if (not values.get("state") or values.get("state") == "n/a") and contact.get(
-            "state"
-        ):
+        if contact.get("state"):
             values["state"] = contact["state"]
         country = self._country(contact.get("country_iso3"))
-        if country and not values.get("country_id"):
+        if country:
             values["country_id"] = country.id
         bank_country = self._country(contact.get("bank_iso3"))
-        if bank_country and not values.get("bank_country_id"):
+        if bank_country:
             values["bank_country_id"] = bank_country.id
         currency = self._currency(contact.get("currency"))
-        if currency and not values.get("currency_id"):
+        if currency:
             values["currency_id"] = currency.id
         if contact.get("payment_method"):
             values["payment_method"] = contact["payment_method"]
+        if contact.get("iban"):
+            values["iban"] = contact["iban"]
+        if contact.get("account_name"):
+            values["account_name"] = contact["account_name"]
+        if contact.get("swift"):
+            values["swift"] = contact["swift"]
+        if contact.get("bank_name"):
+            values["bank_name"] = contact["bank_name"]
         return values
 
     def _missing_note(self, values):
@@ -214,12 +229,16 @@ class JeevesVendorWizard(models.TransientModel):
         if partner:
             values.update(self._values_from_partner(partner))
             note, vendor_id, vendor = self._lookup_existing(partner, values)
-            if vendor:
-                self._merge_jeeves_vendor(values, vendor)
             if vendor_id and not values.get("vendor_id"):
                 values["vendor_id"] = vendor_id
             if note:
                 values["match_note"] = note
+            elif vendor_id:
+                values["match_note"] = self.env._(
+                    "Found in Jeeves as %s. Use “Von Jeeves nach Odoo” "
+                    "to copy phone, address and bank country onto the contact.",
+                    vendor_id,
+                )
             values["missing_note"] = self._missing_note(values)
         return values
 
@@ -231,21 +250,13 @@ class JeevesVendorWizard(models.TransientModel):
         email = values.get("email") or parse_partner_email(partner.email) or ""
         name = partner.name or ""
         stored = (partner.jeeves_vendor_id or values.get("vendor_id") or "").strip()
-        found = None
         try:
-            if stored:
-                found = match_vendor(
-                    client.list_vendors(stored), vendor_id=stored
-                ) or match_vendor(client.list_vendors(name), vendor_id=stored)
-            if not found and email and "@" in email:
-                found = match_vendor(client.list_vendors(email), email=email)
-            if not found and name:
-                found = match_vendor(client.list_vendors(name), name=name)
+            found = client.find_vendor(vendor_id=stored, email=email, name=name)
         except (JeevesMCPConfigError, JeevesMCPError):
             return False, False, None
         if not found:
             return False, False, None
-        vendor_id = str(found.get("id") or "").strip()
+        vendor_id = str(found.get("id") or found.get("vendorId") or "").strip()
         if stored and stored == vendor_id:
             return False, vendor_id, found
         if stored and stored != vendor_id:
@@ -261,8 +272,8 @@ class JeevesVendorWizard(models.TransientModel):
             )
         return (
             self.env._(
-                "Already in Jeeves as %(name)s. Write updates this vendor "
-                "instead of creating a second one.",
+                "Already in Jeeves as %(name)s. “Von Jeeves nach Odoo” "
+                "imports this vendor onto the contact.",
                 name=found.get("vendorName") or name,
             ),
             vendor_id,
@@ -404,3 +415,167 @@ class JeevesVendorWizard(models.TransientModel):
             raise UserError(self.env._("Set the Jeeves vendor id first."))
         self._remember_vendor_id(vendor_id)
         return self._notify(self.env._("Linked Jeeves vendor %s", vendor_id))
+
+    def _fetch_jeeves_vendor(self):
+        self.ensure_one()
+        partner = self._jeeves_partner()
+        try:
+            client = self._jeeves_client()
+            return client.find_vendor(
+                vendor_id=self.vendor_id or partner.jeeves_vendor_id,
+                email=parse_partner_email(self.email) or parse_partner_email(partner.email),
+                name=partner.name,
+            )
+        except (JeevesMCPConfigError, JeevesMCPError) as error:
+            raise UserError(str(error)) from error
+
+    def _import_bank(self, partner):
+        iban = sanitize_iban(self.iban)
+        if "*" in iban:
+            iban = ""
+        bank = partner.bank_ids[:1]
+        if iban:
+            same = partner.bank_ids.filtered(
+                lambda rec: sanitize_iban(rec.acc_number) == iban
+            )
+            if same:
+                bank = same[:1]
+            elif bank and not (bank.acc_number or "").strip():
+                bank.sudo().write({"acc_number": iban})
+            elif not bank:
+                bank = self.env["res.partner.bank"].sudo().create(
+                    {
+                        "partner_id": partner.id,
+                        "acc_number": iban,
+                        "acc_holder_name": self.account_name or partner.name,
+                    }
+                )
+        if not bank or not self.bank_country_id:
+            return
+        writes = {}
+        if self.account_name and not (bank.acc_holder_name or "").strip():
+            writes["acc_holder_name"] = self.account_name
+        if self.swift and bank.bank_id and not bank.bank_id.bic:
+            bank.bank_id.sudo().write({"bic": self.swift})
+        if self.bank_country_id:
+            if bank.bank_id:
+                if not bank.bank_id.country:
+                    bank.bank_id.sudo().write({"country": self.bank_country_id.id})
+            else:
+                name = self.bank_name or self.bank_country_id.name
+                res_bank = self.env["res.bank"].sudo().search(
+                    [
+                        ("name", "=", name),
+                        ("country", "=", self.bank_country_id.id),
+                    ],
+                    limit=1,
+                )
+                if not res_bank:
+                    res_bank = self.env["res.bank"].sudo().create(
+                        {
+                            "name": name,
+                            "country": self.bank_country_id.id,
+                            "bic": self.swift or False,
+                        }
+                    )
+                writes["bank_id"] = res_bank.id
+        if writes:
+            bank.sudo().write(writes)
+
+    def _import_partner_from_wizard(self):
+        partner = self._jeeves_partner()
+        values = {}
+        imported = []
+        if self.street:
+            values["street"] = self.street
+            imported.append("street")
+        if self.zip:
+            values["zip"] = self.zip
+            imported.append("ZIP")
+        if self.city:
+            values["city"] = self.city
+            imported.append("city")
+        if self.country_id:
+            values["country_id"] = self.country_id.id
+            imported.append("country")
+        if self.state and self.state != "n/a" and self.country_id:
+            state = self.env["res.country.state"].search(
+                [
+                    ("country_id", "=", self.country_id.id),
+                    ("name", "=ilike", self.state),
+                ],
+                limit=1,
+            )
+            if state:
+                values["state_id"] = state.id
+        cleaned = parse_partner_email(self.email)
+        if cleaned:
+            values["email"] = cleaned
+            imported.append("e-mail")
+        if self.phone and "phone" in partner._fields:
+            values["phone"] = self.phone
+            imported.append("phone")
+        if values:
+            partner.sudo().write(values)
+        if self.vendor_id:
+            self._remember_vendor_id(self.vendor_id)
+            imported.append("Jeeves vendor id")
+        self._import_bank(partner)
+        if self.bank_country_id:
+            imported.append("bank country")
+        return imported
+
+    def _reload(self):
+        return {
+            "type": "ir.actions.act_window",
+            "name": self.env._("Jeeves vendor"),
+            "res_model": "jeeves.vendor.wizard",
+            "res_id": self.id,
+            "view_mode": "form",
+            "target": "new",
+        }
+
+    def action_import_to_odoo(self):
+        self.ensure_one()
+        vendor = self._fetch_jeeves_vendor()
+        if not vendor:
+            raise UserError(
+                self.env._(
+                    "No Jeeves vendor found for this contact. Set the Jeeves "
+                    "vendor id or match e-mail / name first."
+                )
+            )
+        values = self._values_from_jeeves_vendor(vendor)
+        if not values:
+            raise UserError(
+                self.env._("Jeeves returned a vendor without contact details.")
+            )
+        values["match_note"] = self.env._(
+            "Loaded from Jeeves. Review the fields, then keep them on the contact."
+        )
+        self.write(values)
+        imported = self._import_partner_from_wizard()
+        contact = contact_from_vendor(vendor)
+        missing = [
+            label
+            for key, label in (
+                ("phone", "phone"),
+                ("street", "street"),
+                ("zip", "ZIP"),
+                ("city", "city"),
+                ("bank_iso3", "bank country"),
+            )
+            if not contact.get(key)
+        ]
+        if missing:
+            self.missing_note = self.env._(
+                "Jeeves did not return: %s. Fill them in Odoo or in Jeeves.",
+                ", ".join(missing),
+            )
+        else:
+            self.missing_note = False
+        self.match_note = self.env._(
+            "Imported from Jeeves onto the contact: %s.",
+            ", ".join(imported) or "vendor id",
+        )
+        return self._reload()

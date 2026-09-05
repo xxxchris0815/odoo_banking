@@ -7,9 +7,10 @@
             <form string="Jeeves vendor">
                 <sheet>
                     <div class="alert alert-info" role="alert">
-                        Jeeves braucht Telefon (+CC Nummer), Straße, PLZ, Ort,
-                        Land und Bankland. Bankland kommt aus der IBAN
-                        (LT… → Litauen), nicht aus dem Kontaktland.
+                        Zwei Richtungen: <strong>Write to Jeeves</strong> sendet
+                        Odoo nach Jeeves. <strong>Von Jeeves nach Odoo</strong>
+                        liest den Vendor und schreibt Telefon, Adresse und
+                        Bankland auf den Kontakt.
                     </div>
                     <div class="alert alert-info" role="alert" invisible="not match_note">
                         <field name="match_note" nolabel="1"/>
@@ -61,6 +62,12 @@
                         type="object"
                         string="Write to Jeeves"
                         class="btn-primary"
+                    />
+                    <button
+                        name="action_import_to_odoo"
+                        type="object"
+                        string="Von Jeeves nach Odoo"
+                        class="btn-secondary"
                     />
                     <button
                         name="action_link"

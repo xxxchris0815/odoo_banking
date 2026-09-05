@@ -26,11 +26,17 @@ JEEVES_MCP_URL = "https://mcp-prod.jeev.es/mcp"
 LIST_TRANSACTIONS_TOOL = "list_transactions"
 LIST_ACCOUNTS_TOOL = "list_accounts"
 LIST_VENDORS_TOOL = "list_vendors"
+GET_VENDOR_TOOL = "get_vendor"
 LIST_BILLPAY_INVOICES_TOOL = "list_billpay_invoices"
 CREATE_VENDOR_TOOL = "create_vendor"
 UPDATE_VENDOR_TOOL = "update_vendor"
 READ_ONLY_TOOLS = frozenset(
-    {LIST_TRANSACTIONS_TOOL, LIST_ACCOUNTS_TOOL, LIST_BILLPAY_INVOICES_TOOL}
+    {
+        LIST_TRANSACTIONS_TOOL,
+        LIST_ACCOUNTS_TOOL,
+        LIST_BILLPAY_INVOICES_TOOL,
+        GET_VENDOR_TOOL,
+    }
 )
 VENDOR_TOOLS = frozenset({LIST_VENDORS_TOOL, CREATE_VENDOR_TOOL, UPDATE_VENDOR_TOOL})
 ALLOWED_TOOLS = READ_ONLY_TOOLS | VENDOR_TOOLS
@@ -704,19 +710,34 @@ class JeevesMCPClient:
         search: str | None = None,
         *,
         page_size: int = 20,
+        selected_fields: dict[str, bool] | None = None,
     ) -> list[dict[str, Any]]:
-        from .jeeves_vendors import unwrap_mcp_vendors
+        from .jeeves_vendors import SELECTED_VENDOR_FIELDS, unwrap_mcp_vendors
 
         collected: list[dict[str, Any]] = []
         page = 1
         total = None
+        fields = (
+            selected_fields
+            if selected_fields is not None
+            else dict(SELECTED_VENDOR_FIELDS)
+        )
+        use_fields = bool(fields)
         while True:
             arguments: dict[str, Any] = {"page": page, "pageSize": page_size}
             if search:
                 arguments["searchQuery"] = search
-            rows, reported = unwrap_mcp_vendors(
-                self.call_tool(LIST_VENDORS_TOOL, arguments)
-            )
+            if use_fields:
+                arguments["selectedFields"] = fields
+            try:
+                rows, reported = unwrap_mcp_vendors(
+                    self.call_tool(LIST_VENDORS_TOOL, arguments)
+                )
+            except JeevesMCPError:
+                if use_fields and page == 1:
+                    use_fields = False
+                    continue
+                raise
             collected.extend(rows)
             if total is None:
                 total = reported
@@ -728,6 +749,59 @@ class JeevesMCPClient:
             if page > 100:
                 raise JeevesMCPError("Jeeves MCP list_vendors exceeded 100 pages")
         return collected
+
+    def get_vendor(self, vendor_id: str) -> dict[str, Any] | None:
+        from .jeeves_vendors import unwrap_mcp_vendors
+
+        vendor_id = (vendor_id or "").strip()
+        if not vendor_id:
+            return None
+        try:
+            payload = self.call_tool(GET_VENDOR_TOOL, {"vendorId": vendor_id})
+        except (JeevesMCPError, JeevesMCPConfigError):
+            return None
+        rows, _total = unwrap_mcp_vendors(payload)
+        if rows:
+            return rows[0]
+        parsed = unwrap_mcp_json_value(payload)
+        if isinstance(parsed, dict) and (
+            parsed.get("id") or parsed.get("vendorId") or parsed.get("emailAddress")
+        ):
+            return parsed
+        return None
+
+    def find_vendor(
+        self,
+        *,
+        vendor_id: str | None = None,
+        email: str | None = None,
+        name: str | None = None,
+    ) -> dict[str, Any] | None:
+        from .jeeves_vendors import match_vendor
+
+        vendor_id = (vendor_id or "").strip()
+        email = (email or "").strip()
+        name = (name or "").strip()
+        if vendor_id:
+            found = self.get_vendor(vendor_id)
+            if found:
+                return found
+            found = match_vendor(self.list_vendors(vendor_id), vendor_id=vendor_id)
+            if found:
+                return found
+        if email and "@" in email:
+            found = match_vendor(self.list_vendors(email), email=email)
+            if found:
+                return found
+        if name:
+            found = match_vendor(self.list_vendors(name), name=name)
+            if found:
+                return found
+            if vendor_id:
+                found = match_vendor(self.list_vendors(name), vendor_id=vendor_id)
+                if found:
+                    return found
+        return None
 
     def create_vendor(self, draft) -> dict[str, Any]:
         from .jeeves_vendors import (

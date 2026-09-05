@@ -11,6 +11,26 @@ from .jeeves_mcp import unwrap_mcp_json_value
 LIST_VENDORS_TOOL = "list_vendors"
 CREATE_VENDOR_TOOL = "create_vendor"
 UPDATE_VENDOR_TOOL = "update_vendor"
+SELECTED_VENDOR_FIELDS = {
+    "id": True,
+    "vendorName": True,
+    "companyName": True,
+    "firstName": True,
+    "lastName": True,
+    "emailAddress": True,
+    "phoneNumber": True,
+    "streetAddress": True,
+    "city": True,
+    "state": True,
+    "postcode": True,
+    "postalCode": True,
+    "countryCode": True,
+    "entityType": True,
+    "vendorPaymentDetails": True,
+    "address": True,
+    "contact": True,
+    "contactInformation": True,
+}
 VENDOR_TOOLS = frozenset(
     {LIST_VENDORS_TOOL, CREATE_VENDOR_TOOL, UPDATE_VENDOR_TOOL}
 )
@@ -192,6 +212,13 @@ def sanitize_iban(value: str | None) -> str:
     return re.sub(r"\s+", "", value or "").upper()
 
 
+def usable_account_number(value: str | None) -> str:
+    cleaned = sanitize_iban(value)
+    if not cleaned or "*" in cleaned:
+        return ""
+    return cleaned
+
+
 ISO3_TO_ISO2 = {iso3: iso2 for iso2, iso3 in ISO2_TO_ISO3.items()}
 EMAIL_ANGLE_RE = re.compile(r"<([^<>\s]+@[^<>\s]+)>")
 EMAIL_PLAIN_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -246,48 +273,85 @@ def vendor_payout(vendor: dict[str, Any], currency: str | None = None) -> dict[s
 
 
 def contact_from_vendor(vendor: dict[str, Any] | None) -> dict[str, str]:
-    """Pull whatever contact/payout fields list_vendors actually returns."""
+    """Pull whatever contact/payout fields list_vendors / get_vendor return."""
     if not isinstance(vendor, dict):
         return {}
     payout = vendor_payout(vendor)
     address = vendor.get("address") if isinstance(vendor.get("address"), dict) else {}
+    contact = (
+        vendor.get("contact")
+        if isinstance(vendor.get("contact"), dict)
+        else vendor.get("contactInformation")
+        if isinstance(vendor.get("contactInformation"), dict)
+        else {}
+    )
+    entity = str(vendor.get("entityType") or vendor.get("type") or "").strip().upper()
+    iban = usable_account_number(
+        payout.get("iban") or payout.get("accountNumber") or vendor.get("iban")
+    )
     return {
         "vendor_id": str(vendor.get("id") or vendor.get("vendorId") or "").strip(),
+        "entity_type": entity if entity in {"COMPANY", "PERSONAL"} else "",
         "email": parse_partner_email(
-            str(vendor.get("emailAddress") or vendor.get("email") or "")
+            str(
+                vendor.get("emailAddress")
+                or vendor.get("email")
+                or contact.get("emailAddress")
+                or ""
+            )
         ),
         "phone": str(
-            vendor.get("phoneNumber") or vendor.get("phone") or ""
+            vendor.get("phoneNumber")
+            or vendor.get("phone")
+            or contact.get("phoneNumber")
+            or contact.get("phone")
+            or ""
         ).strip(),
         "street": str(
             vendor.get("streetAddress")
             or vendor.get("street")
             or address.get("streetAddress")
             or address.get("street")
+            or contact.get("streetAddress")
             or ""
         ).strip(),
         "city": str(
-            vendor.get("city") or address.get("city") or ""
+            vendor.get("city")
+            or address.get("city")
+            or contact.get("city")
+            or ""
         ).strip(),
         "zip": str(
             vendor.get("postcode")
             or vendor.get("postalCode")
             or vendor.get("zip")
             or address.get("postcode")
+            or contact.get("postcode")
             or ""
         ).strip(),
-        "state": str(vendor.get("state") or address.get("state") or "").strip(),
+        "state": str(
+            vendor.get("state") or address.get("state") or contact.get("state") or ""
+        ).strip(),
         "country_iso3": str(
-            vendor.get("countryCode") or address.get("countryCode") or ""
+            vendor.get("countryCode")
+            or address.get("countryCode")
+            or contact.get("countryCode")
+            or ""
         ).strip(),
         "bank_iso3": str(payout.get("bankCountryCode") or "").strip(),
         "currency": str(
             payout.get("bankCurrencyCode") or payout.get("currency") or ""
         ).strip(),
         "payment_method": str(payout.get("paymentMethod") or "").strip(),
+        "iban": iban,
+        "account_name": str(payout.get("accountName") or "").strip(),
+        "swift": str(payout.get("swiftCode") or payout.get("swift") or "").strip(),
+        "bank_name": str(payout.get("bankName") or "").strip(),
         "company_name": str(
             vendor.get("companyName") or vendor.get("vendorName") or ""
         ).strip(),
+        "first_name": str(vendor.get("firstName") or "").strip(),
+        "last_name": str(vendor.get("lastName") or "").strip(),
     }
 
 
