@@ -25,6 +25,14 @@ SETTLED_STATUS = "SETTLED"
 DEFAULT_PAGE_LIMIT = 100
 
 
+def _normalize_api_key(api_key: str) -> str:
+    """n8n/ZEN use ``Authorization: Bearer <apiKey>``. Strip a pasted prefix."""
+    key = (api_key or "").strip()
+    if key.lower().startswith("bearer "):
+        return key[7:].strip()
+    return key
+
+
 class ZenConfigError(ValueError):
     """Provider is missing credentials or account identification."""
 
@@ -428,7 +436,7 @@ class ZenClient:
     ):
         if not api_key:
             raise ZenConfigError("ZEN.COM API key is required")
-        self.api_key = api_key
+        self.api_key = _normalize_api_key(api_key)
         self.api_base = (api_base or ZEN_DEFAULT_API_BASE).rstrip("/") + "/"
         self.account_id = account_id or None
         self.iban = (iban or "").replace(" ", "").upper() or None
@@ -438,7 +446,7 @@ class ZenClient:
 
     def _headers(self) -> dict[str, str]:
         return {
-            "Authorization": self.api_key,
+            "Authorization": f"Bearer {self.api_key}",
             "Accept": "application/json",
         }
 

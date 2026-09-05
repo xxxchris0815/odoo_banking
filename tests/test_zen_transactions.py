@@ -128,7 +128,7 @@ def test_client_resolves_iban_and_paginates():
 
     def http_get(url, headers):
         calls.append(url)
-        assert headers["Authorization"] == "secret-key"
+        assert headers["Authorization"] == "Bearer secret-key"
         if url.rstrip("/").endswith("accounts/v1.0"):
             return 200, accounts
         if "lastEntryId=" in url:
@@ -149,6 +149,19 @@ def test_client_resolves_iban_and_paginates():
     assert any("bookedAtFrom=2026-08-01" in url for url in calls)
     assert any(HISTORY_PATH in url for url in calls)
     assert client.api_base.startswith(ZEN_DEFAULT_API_BASE)
+
+
+def test_authorization_is_bearer_and_strips_pasted_prefix():
+    seen = []
+
+    def http_get(url, headers):
+        seen.append(headers["Authorization"])
+        return 200, {"data": [], "meta": {"hasNext": False}}
+
+    ZenClient("Bearer already-prefixed", account_id="x", http_get=http_get).iter_history(
+        datetime(2026, 1, 1), datetime(2026, 1, 2)
+    )
+    assert seen == ["Bearer already-prefixed"]
 
 
 def test_client_uses_explicit_account_id():

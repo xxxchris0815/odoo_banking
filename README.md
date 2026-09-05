@@ -186,7 +186,7 @@ Nutzt die Transfers API (`api-services.zen.com`), nicht die Shop-Payments-API.
    API (`api-services.zen.com`) verlangt gegenseitiges TLS.
 3. Journal `ZEN EUR` mit der Wallet-IBAN.
 4. Online Provider *ZEN.COM*:
-   - Password = API Key
+   - Password = API Key (wird als ``Authorization: Bearer …`` geschickt)
    - Username = optionale Account-UUID (sonst IBAN-Match)
    - Certificate / Private Key = PEM-Blöcke
    - API Base leer = Produktion, sonst `https://api-services.zen-test.com`

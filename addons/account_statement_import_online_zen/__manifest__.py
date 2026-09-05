@@ -1,6 +1,6 @@
 {
     "name": "Online Bank Statements: ZEN.COM",
-    "version": "19.0.1.4.0",
+    "version": "19.0.1.5.0",
     "category": "Accounting",
     "summary": "Pull ZEN.COM wallet transactions into bank statements",
     "author": "Expect Magic",
