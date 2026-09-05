@@ -26,6 +26,26 @@
                             password="True"
                             required="service == 'zen'"
                         />
+                        <field
+                            name="certificate_public_key"
+                            string="mTLS client certificate"
+                            placeholder="-----BEGIN CERTIFICATE-----"
+                        />
+                        <field
+                            name="certificate_private_key"
+                            string="mTLS private key"
+                            password="True"
+                        />
+                        <field
+                            name="certificate_chain"
+                            string="mTLS CA chain"
+                            placeholder="optional — only if ZEN sent a CA file"
+                        />
+                        <field
+                            name="passphrase"
+                            string="Private key passphrase"
+                            password="True"
+                        />
                     </group>
                 </group>
             </xpath>

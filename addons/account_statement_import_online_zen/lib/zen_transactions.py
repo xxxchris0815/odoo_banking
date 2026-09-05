@@ -6,6 +6,10 @@ line dicts expected by OCA ``online.bank.statement.provider``.
 
 from __future__ import annotations
 
+import os
+import ssl
+import tempfile
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Callable, Iterable
 from urllib.parse import urlencode, urljoin
@@ -13,7 +17,7 @@ from urllib.parse import urlencode, urljoin
 ZEN_DEFAULT_API_BASE = "https://api-services.zen.com"
 ZEN_TEST_API_BASE = "https://api-services.zen-test.com"
 ACCOUNTS_PATH = "accounts/v1.0"
-HISTORY_PATH = "payments/v1.0"
+HISTORY_PATH = "payments/v1.0/history"
 SETTLED_STATUS = "SETTLED"
 DEFAULT_PAGE_LIMIT = 100
 
@@ -29,6 +33,111 @@ class ZenHTTPError(RuntimeError):
         self.status_code = status_code
         self.body = body
         super().__init__(f"ZEN.COM API error {status_code}: {body}")
+
+
+@dataclass(frozen=True)
+class ZenTLS:
+    """Client certificate material for the Transfers API mTLS handshake."""
+
+    client_cert: str
+    client_key: str
+    ca_cert: str | None = None
+    key_password: str | None = None
+
+    def validate(self) -> None:
+        cert = (self.client_cert or "").strip()
+        key = (self.client_key or "").strip()
+        if "BEGIN CERTIFICATE" not in cert:
+            raise ZenConfigError(
+                "ZEN.COM mTLS client certificate must be PEM "
+                "(-----BEGIN CERTIFICATE-----)"
+            )
+        if "BEGIN" not in key or "PRIVATE KEY" not in key:
+            raise ZenConfigError(
+                "ZEN.COM mTLS private key must be PEM "
+                "(-----BEGIN PRIVATE KEY----- or -----BEGIN RSA PRIVATE KEY-----)"
+            )
+
+
+def _write_pem(content: str) -> str:
+    handle, path = tempfile.mkstemp(prefix="zen-mtls-", suffix=".pem")
+    try:
+        os.write(handle, content.strip().encode())
+    finally:
+        os.close(handle)
+    os.chmod(path, 0o600)
+    return path
+
+
+def build_ssl_context(tls: ZenTLS) -> tuple[ssl.SSLContext, list[str]]:
+    """Load client cert/key (and optional CA) into an SSL context."""
+    tls.validate()
+    temps: list[str] = []
+    try:
+        cert_path = _write_pem(tls.client_cert)
+        key_path = _write_pem(tls.client_key)
+        temps.extend([cert_path, key_path])
+        context = ssl.create_default_context()
+        if tls.ca_cert and tls.ca_cert.strip():
+            context.load_verify_locations(cadata=tls.ca_cert.strip())
+        context.load_cert_chain(
+            certfile=cert_path,
+            keyfile=key_path,
+            password=tls.key_password or None,
+        )
+        return context, temps
+    except Exception:
+        for path in temps:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        raise
+
+
+def requests_get_mtls(
+    url: str,
+    headers: dict[str, str],
+    tls: ZenTLS | None = None,
+    *,
+    timeout: int = 30,
+):
+    """GET with client certificate. Used by the Odoo provider."""
+    import requests
+    from requests.adapters import HTTPAdapter
+
+    if tls is None:
+        raise ZenConfigError(
+            "ZEN.COM Transfers API requires mTLS. "
+            "Set the client certificate and private key on the provider."
+        )
+    context, temps = build_ssl_context(tls)
+
+    class _MTLSAdapter(HTTPAdapter):
+        def init_poolmanager(self, connections, maxsize, block=False, **kwargs):
+            kwargs["ssl_context"] = context
+            return super().init_poolmanager(connections, maxsize, block, **kwargs)
+
+        def proxy_manager_for(self, proxy, **kwargs):
+            kwargs["ssl_context"] = context
+            return super().proxy_manager_for(proxy, **kwargs)
+
+    session = requests.Session()
+    session.mount("https://", _MTLSAdapter())
+    try:
+        response = session.get(url, headers=headers, timeout=timeout)
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = response.text
+        return response.status_code, payload
+    finally:
+        session.close()
+        for path in temps:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
 
 def _as_date(value: datetime | date) -> str:
@@ -143,7 +252,8 @@ class ZenClient:
         api_base: str | None = None,
         account_id: str | None = None,
         iban: str | None = None,
-        http_get: Callable[[str, dict[str, str]], tuple[int, Any]] | None = None,
+        tls: ZenTLS | None = None,
+        http_get: Callable[..., tuple[int, Any]] | None = None,
         page_limit: int = DEFAULT_PAGE_LIMIT,
     ):
         if not api_key:
@@ -152,6 +262,7 @@ class ZenClient:
         self.api_base = (api_base or ZEN_DEFAULT_API_BASE).rstrip("/") + "/"
         self.account_id = account_id or None
         self.iban = (iban or "").replace(" ", "").upper() or None
+        self.tls = tls
         self.page_limit = page_limit
         self._http_get = http_get
 
@@ -173,7 +284,10 @@ class ZenClient:
         url = self._url(path, params)
         if self._http_get is None:
             raise ZenConfigError("No HTTP backend configured")
-        status, payload = self._http_get(url, self._headers())
+        try:
+            status, payload = self._http_get(url, self._headers(), self.tls)
+        except TypeError:
+            status, payload = self._http_get(url, self._headers())
         if status >= 400:
             body = payload if isinstance(payload, str) else str(payload)
             raise ZenHTTPError(status, body)

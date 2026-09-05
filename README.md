@@ -182,12 +182,15 @@ verwenden — das ist Open Banking (Bank Account Data), nicht Einzüge.
 Nutzt die Transfers API (`api-services.zen.com`), nicht die Shop-Payments-API.
 
 1. API-Key bei ZEN beantragen (nicht der Terminal-Key aus my.zen.com Payments).
-2. Journal `ZEN EUR` mit der Wallet-IBAN.
-3. Online Provider *ZEN.COM*:
+2. mTLS-Clientzertifikat und passenden Private Key (PEM). Die Transfers
+   API (`api-services.zen.com`) verlangt gegenseitiges TLS.
+3. Journal `ZEN EUR` mit der Wallet-IBAN.
+4. Online Provider *ZEN.COM*:
    - Password = API Key
    - Username = optionale Account-UUID (sonst IBAN-Match)
+   - Certificate / Private Key = PEM-Blöcke
    - API Base leer = Produktion, sonst `https://api-services.zen-test.com`
-4. Es werden nur `SETTLED`-Zahlungen übernommen. `IN_PROGRESS` / `REJECTED`
+5. Es werden nur `SETTLED`-Zahlungen übernommen. `IN_PROGRESS` / `REJECTED`
    bleiben draußen, sonst entstehen Duplikate sobald sie settled sind.
 
 Ohne Transfers-API-Zugang: monatlichen CSV-Kontoauszug aus der ZEN-App

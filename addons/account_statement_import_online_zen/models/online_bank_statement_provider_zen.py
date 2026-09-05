@@ -1,8 +1,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+import base64
 import logging
-
-import requests
 
 from odoo import api, models
 from odoo.exceptions import UserError
@@ -12,18 +11,45 @@ from ..lib.zen_transactions import (
     ZenClient,
     ZenConfigError,
     ZenHTTPError,
+    ZenTLS,
+    requests_get_mtls,
 )
 
 _logger = logging.getLogger(__name__)
 
 
-def _requests_get(url, headers):
-    response = requests.get(url, headers=headers, timeout=30)
-    try:
-        payload = response.json()
-    except ValueError:
-        payload = response.text
-    return response.status_code, payload
+def _decode_binary_pem(value):
+    """Accept PEM text or a Binary field that stores a .crt/.key as base64."""
+    if not value:
+        return ""
+    candidates = []
+    if isinstance(value, bytes):
+        candidates.append(value)
+        try:
+            candidates.append(base64.b64decode(value))
+        except (ValueError, TypeError):
+            pass
+    else:
+        text = str(value).strip()
+        if text.startswith("-----BEGIN"):
+            return text
+        candidates.append(text.encode())
+        try:
+            candidates.append(base64.b64decode(text))
+        except (ValueError, TypeError):
+            pass
+    for raw in candidates:
+        try:
+            text = raw.decode()
+        except UnicodeDecodeError:
+            continue
+        if text.strip().startswith("-----BEGIN"):
+            return text.strip()
+    return ""
+
+
+def _requests_get(url, headers, tls=None):
+    return requests_get_mtls(url, headers, tls)
 
 
 class OnlineBankStatementProviderZen(models.Model):
@@ -39,6 +65,34 @@ class OnlineBankStatementProviderZen(models.Model):
             return super()._obtain_statement_data(date_since, date_until)
         return self._zen_obtain_statement_data(date_since, date_until)
 
+    def _zen_tls(self):
+        self.ensure_one()
+        cert = (self.certificate_public_key or "").strip() or _decode_binary_pem(
+            self.certificate
+        )
+        key = (self.certificate_private_key or "").strip() or _decode_binary_pem(
+            self.key
+        )
+        ca = (self.certificate_chain or "").strip() or None
+        if not cert or not key:
+            raise UserError(
+                self.env._(
+                    "ZEN.COM Transfers API uses mTLS. "
+                    "Paste the client certificate and private key on the provider."
+                )
+            )
+        try:
+            tls = ZenTLS(
+                client_cert=cert,
+                client_key=key,
+                ca_cert=ca,
+                key_password=self.passphrase or None,
+            )
+            tls.validate()
+        except ZenConfigError as error:
+            raise UserError(str(error)) from error
+        return tls
+
     def _zen_client(self):
         self.ensure_one()
         api_key = self.password
@@ -49,6 +103,7 @@ class OnlineBankStatementProviderZen(models.Model):
             api_base=self.api_base or ZEN_DEFAULT_API_BASE,
             account_id=self.username or None,
             iban=self.account_number or None,
+            tls=self._zen_tls(),
             http_get=_requests_get,
         )
 

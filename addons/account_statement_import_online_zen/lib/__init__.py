@@ -6,6 +6,9 @@ from .zen_transactions import (  # noqa: F401
     ZenClient,
     ZenConfigError,
     ZenHTTPError,
+    ZenTLS,
+    build_ssl_context,
+    requests_get_mtls,
     iter_settled_transactions,
     statement_lines_from_transactions,
 )

@@ -3,10 +3,14 @@ from datetime import datetime
 import pytest
 
 from account_statement_import_online_zen.lib.zen_transactions import (
+    HISTORY_PATH,
     ZEN_DEFAULT_API_BASE,
     ZenClient,
     ZenConfigError,
     ZenHTTPError,
+    ZenTLS,
+    build_ssl_context,
+    requests_get_mtls,
     statement_line_from_transaction,
     statement_lines_from_transactions,
 )
@@ -136,6 +140,7 @@ def test_client_resolves_iban_and_paginates():
     assert [line["amount"] for line in lines] == [150.50, -20.00]
     assert any("accountId=acc-zen-1" in url for url in calls)
     assert any("bookedAtFrom=2026-08-01" in url for url in calls)
+    assert any(HISTORY_PATH in url for url in calls)
     assert client.api_base.startswith(ZEN_DEFAULT_API_BASE)
 
 
@@ -171,3 +176,79 @@ def test_iban_mismatch_raises():
     client = ZenClient("k", iban="LT093130010187172305", http_get=http_get)
     with pytest.raises(ZenConfigError, match="No ZEN.COM account"):
         client.resolve_account_id()
+
+
+def _ephemeral_pem_pair():
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    if not shutil.which("openssl"):
+        pytest.skip("openssl is required to build a test certificate")
+    with tempfile.TemporaryDirectory() as tmp:
+        cert = Path(tmp) / "cert.pem"
+        key = Path(tmp) / "key.pem"
+        subprocess.check_call(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-keyout",
+                str(key),
+                "-out",
+                str(cert),
+                "-days",
+                "1",
+                "-nodes",
+                "-subj",
+                "/CN=zen-test",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return cert.read_text(), key.read_text()
+
+
+def test_mtls_pem_loads_into_ssl_context():
+    cert, key = _ephemeral_pem_pair()
+    tls = ZenTLS(client_cert=cert, client_key=key)
+    context, temps = build_ssl_context(tls)
+    try:
+        assert context is not None
+    finally:
+        import os
+
+        for path in temps:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
+def test_mtls_rejects_non_pem():
+    with pytest.raises(ZenConfigError, match="PEM"):
+        ZenTLS(client_cert="not-a-cert", client_key="not-a-key").validate()
+
+
+def test_live_http_backend_requires_mtls():
+    with pytest.raises(ZenConfigError, match="mTLS"):
+        requests_get_mtls("https://api-services.zen.com/accounts/v1.0", {})
+
+
+def test_client_forwards_tls_to_http():
+    seen = {}
+
+    def http_get(url, headers, tls=None):
+        seen["tls"] = tls
+        return 200, {"data": [], "meta": {"hasNext": False}}
+
+    tls = ZenTLS(
+        client_cert="-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+        client_key="-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----",
+    )
+    client = ZenClient("k", account_id="x", tls=tls, http_get=http_get)
+    client.obtain_statement_lines(datetime(2026, 1, 1), datetime(2026, 1, 2))
+    assert seen["tls"] is tls
