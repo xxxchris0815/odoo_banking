@@ -195,30 +195,60 @@ class OnlineBankStatementProviderZen(models.Model):
             filtered.append(line)
         return filtered
 
-    def _zen_assign_partner(self, line):
-        """Map counterparty IBAN onto res.partner.bank → partner_id."""
-        raw = line.get("account_number") or ""
-        if raw in (True, False, None):
-            return
-        acc = str(raw).replace(" ", "").upper()
-        if not acc:
-            return
-        line["account_number"] = acc
+    def _zen_text(self, value):
+        if value in (True, False, None):
+            return ""
+        return str(value).strip()
+
+    def _zen_bank_domain(self, acc):
         Bank = self.env["res.partner.bank"].sudo()
-        domain = [("acc_number", "ilike", acc)]
         if "sanitized_acc_number" in Bank._fields:
-            domain = [
+            return [
                 "|",
                 ("sanitized_acc_number", "=", acc),
                 ("acc_number", "=", acc),
             ]
-        bank = Bank.search(domain, limit=1)
-        if not bank:
+        return [("acc_number", "ilike", acc)]
+
+    def _zen_remember_iban(self, partner, acc):
+        """Store the counterparty IBAN on the partner after a unique name hit."""
+        if not partner or not acc:
             return
-        line["partner_id"] = bank.partner_id.id
-        line["partner_bank_id"] = bank.id
-        if not line.get("partner_name"):
-            line["partner_name"] = bank.partner_id.name
+        Bank = self.env["res.partner.bank"].sudo()
+        existing = Bank.search(self._zen_bank_domain(acc), limit=1)
+        if existing:
+            return
+        Bank.create({"partner_id": partner.id, "acc_number": acc})
+
+    def _zen_assign_partner(self, line):
+        """IBAN on res.partner.bank first, then unique name (and remember IBAN)."""
+        if (line.get("transaction_type") or "") == "fee":
+            return
+        acc = self._zen_text(line.get("account_number")).replace(" ", "").upper()
+        if acc:
+            line["account_number"] = acc
+        name = self._zen_text(line.get("partner_name"))
+        Partner = self.env["res.partner"].sudo()
+        Bank = self.env["res.partner.bank"].sudo()
+        if acc:
+            bank = Bank.search(self._zen_bank_domain(acc), limit=1)
+            if bank:
+                line["partner_id"] = bank.partner_id.id
+                line["partner_bank_id"] = bank.id
+                if not line.get("partner_name"):
+                    line["partner_name"] = bank.partner_id.name
+                return
+        if not name:
+            return
+        found = Partner.search([("name", "=ilike", name)], limit=2)
+        if len(found) != 1:
+            return
+        line["partner_id"] = found.id
+        if acc:
+            self._zen_remember_iban(found, acc)
+            bank = Bank.search(self._zen_bank_domain(acc), limit=1)
+            if bank:
+                line["partner_bank_id"] = bank.id
 
     def _zen_provider_for_account(self, account_id):
         """Route a notification to the wallet that owns this account UUID."""

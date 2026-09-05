@@ -36,6 +36,7 @@ def _tx(**overrides):
         "ending_balance": {"currency_code": "EUR", "value": "4387.60"},
     }
     payer = {
+        "account_id": "PAYERADA1",
         "email_address": "ada@example.com",
         "payer_name": {
             "given_name": "Ada",
@@ -164,6 +165,8 @@ def test_checkout_uses_customer_and_cart_item():
     assert line["unique_import_id"] == "pp:tx:7S153172KG271445K"
     assert line["partner_name"] == "Ada Lovelace"
     assert line["account_number"] == "ada@example.com"
+    assert line["paypal_payer_id"] == "PAYERADA1"
+    assert "payer=PAYERADA1" in line["narration"]
     assert line["payment_ref"] == "[paid] Ada Lovelace — Live ORGASMIC"
     assert line["date"] == datetime(2026, 8, 6, 11, 25, 53)
     assert fee["unique_import_id"] == "pp:tx:7S153172KG271445K:fee"
@@ -176,6 +179,7 @@ def test_withdrawal_has_no_false_partner():
     line = statement_line_from_transaction(WITHDRAWAL)
     assert line["amount"] == -4387.60
     assert line["partner_name"] is False
+    assert "paypal_payer_id" not in line
     assert line["payment_ref"] == "[paid] Withdrawal — YYW1052196567228"
     assert "bank=YYW1052196567228" in line["narration"]
 

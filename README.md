@@ -114,6 +114,9 @@ Live-Mapping (PayPal liefert `full_name` fast nie):
 `unique_import_id` = `pp:tx:{transaction_id}` bzw. `:fee`. Kein Zeitstempel
 in der ID — ein Re-Pull aktualisiert nicht doppelt.
 
+Partner: gespeicherte PayPal-Account-ID am Kontakt, sonst eindeutige
+Zahler-E-Mail. Der erste E-Mail-Treffer schreibt die ID.
+
 Webhook pro Konto: `https://DEINE-DOMAIN/paypal/webhook/<token>`.
 Jede Provider-Zeile hat ein eigenes Token — so können mehrere
 PayPal-Accounts auf dieselbe Odoo-Instanz zeigen.
@@ -136,6 +139,9 @@ braucht der Key nicht — den Hook legst du manuell im Dashboard an.
 
 `unique_import_id` = `st:txn:{id}` bzw. `:fee`. Webhook pro Konto:
 `https://DEINE-DOMAIN/stripe/webhook/<token>` (immer HTTPS).
+
+Partner: gespeicherte `cus_…` am Kontakt, sonst eindeutige E-Mail.
+Der erste E-Mail-Treffer schreibt die Stripe-Kunden-ID.
 
 Auszugssaldo: nicht das Live-Guthaben (nach einem Payout oft 0), sondern
 das Wallet zum Tagesende — analog zu PayPals `available_balance` auf der
@@ -200,8 +206,9 @@ Nutzt die Transfers API (`api-services.zen.com`), nicht die Shop-Payments-API.
    bleiben draußen, sonst entstehen Duplikate sobald sie settled sind.
 7. Label ist `Absender — Titel` ohne Status-Prefix wie `[paid]`. Die
    Gegenpartei-IBAN liegt auf `account_number` (Feld `iban` oder
-   `accountNumber`). Steht sie auf `res.partner.bank`, wird der Partner
-   gesetzt. PayPal/Stripe haben keine IBAN — dort matcht die E-Mail.
+   `accountNumber`). Zuerst IBAN auf `res.partner.bank`, sonst
+   eindeutiger Name — dann speichert Odoo die IBAN am Kontakt.
+   PayPal/Stripe matchen über gespeicherte Account-/Kunden-ID, sonst E-Mail.
 
 Ohne Transfers-API-Zugang: monatlichen CSV-Kontoauszug aus der ZEN-App
 über `account_statement_import_sheet_file` importieren.

@@ -158,8 +158,9 @@ class OnlineBankStatementProviderStripe(models.Model):
         filtered = []
         for line in lines:
             currency_code = line.pop("currency_code", None)
-            self._assign_partner_by_email(line)
+            self._assign_partner(line)
             line.pop("partner_email", None)
+            line.pop("stripe_customer_id", None)
             if currency_code and currency and currency_code != currency:
                 _logger.info(
                     "Skipping Stripe transaction %s with currency %s (journal is %s)",
@@ -171,17 +172,52 @@ class OnlineBankStatementProviderStripe(models.Model):
             filtered.append(line)
         return filtered, extras
 
-    def _assign_partner_by_email(self, line):
-        email = line.get("partner_email") or line.get("account_number") or ""
-        if email in (True, False, None):
+    def _stripe_text(self, value):
+        if value in (True, False, None):
+            return ""
+        return str(value).strip()
+
+    def _stripe_remember_customer_id(self, partner, customer_id):
+        if (
+            not partner
+            or not customer_id
+            or "stripe_customer_id" not in partner._fields
+        ):
             return
-        email = str(email).strip()
-        if "@" not in email:
+        if (partner.stripe_customer_id or "").strip():
             return
-        found = self.env["res.partner"].sudo().search(
-            [("email", "=ilike", email)], limit=2
+        other = self.env["res.partner"].sudo().search(
+            [("stripe_customer_id", "=", customer_id), ("id", "!=", partner.id)],
+            limit=1,
         )
-        if len(found) != 1:
+        if other:
+            _logger.info(
+                "Stripe customer %s already on partner %s, not writing to %s",
+                customer_id,
+                other.id,
+                partner.id,
+            )
+            return
+        partner.sudo().write({"stripe_customer_id": customer_id})
+
+    def _assign_partner(self, line):
+        """Stored cus_ id first, then unique e-mail. Remember id after e-mail."""
+        if (line.get("transaction_type") or "") in {"fee", "payout", "payout_failure", "payout_cancel"}:
+            return
+        Partner = self.env["res.partner"].sudo()
+        customer_id = self._stripe_text(line.get("stripe_customer_id"))
+        email = self._stripe_text(line.get("partner_email") or line.get("account_number"))
+        found = Partner.browse()
+        if customer_id and "stripe_customer_id" in Partner._fields:
+            found = Partner.search([("stripe_customer_id", "=", customer_id)], limit=2)
+            if len(found) != 1:
+                found = Partner.browse()
+        if not found and email and "@" in email:
+            by_email = Partner.search([("email", "=ilike", email)], limit=2)
+            if len(by_email) == 1:
+                found = by_email
+                self._stripe_remember_customer_id(found, customer_id)
+        if not found:
             return
         line["partner_id"] = found.id
         if not line.get("partner_name"):

@@ -166,8 +166,9 @@ class OnlineBankStatementProviderPayPal(models.Model):
         filtered = []
         for line in lines:
             currency_code = line.pop("currency_code", None)
-            self._assign_partner_by_email(line)
+            self._assign_partner(line)
             line.pop("partner_email", None)
+            line.pop("paypal_payer_id", None)
             if (
                 currency_code
                 and currency
@@ -183,17 +184,48 @@ class OnlineBankStatementProviderPayPal(models.Model):
             filtered.append(line)
         return filtered, extras
 
-    def _assign_partner_by_email(self, line):
-        email = line.get("partner_email") or line.get("account_number") or ""
-        if email in (True, False, None):
+    def _paypal_text(self, value):
+        if value in (True, False, None):
+            return ""
+        return str(value).strip()
+
+    def _paypal_remember_payer_id(self, partner, payer_id):
+        if not partner or not payer_id or "paypal_payer_id" not in partner._fields:
             return
-        email = str(email).strip()
-        if "@" not in email:
+        if (partner.paypal_payer_id or "").strip():
             return
-        found = self.env["res.partner"].sudo().search(
-            [("email", "=ilike", email)], limit=2
+        other = self.env["res.partner"].sudo().search(
+            [("paypal_payer_id", "=", payer_id), ("id", "!=", partner.id)],
+            limit=1,
         )
-        if len(found) != 1:
+        if other:
+            _logger.info(
+                "PayPal payer %s already on partner %s, not writing to %s",
+                payer_id,
+                other.id,
+                partner.id,
+            )
+            return
+        partner.sudo().write({"paypal_payer_id": payer_id})
+
+    def _assign_partner(self, line):
+        """Stored PayPal account id first, then unique e-mail. Remember id after e-mail."""
+        if (line.get("transaction_type") or "") == "fee":
+            return
+        Partner = self.env["res.partner"].sudo()
+        payer_id = self._paypal_text(line.get("paypal_payer_id"))
+        email = self._paypal_text(line.get("partner_email") or line.get("account_number"))
+        found = Partner.browse()
+        if payer_id and "paypal_payer_id" in Partner._fields:
+            found = Partner.search([("paypal_payer_id", "=", payer_id)], limit=2)
+            if len(found) != 1:
+                found = Partner.browse()
+        if not found and email and "@" in email:
+            by_email = Partner.search([("email", "=ilike", email)], limit=2)
+            if len(by_email) == 1:
+                found = by_email
+                self._paypal_remember_payer_id(found, payer_id)
+        if not found:
             return
         line["partner_id"] = found.id
         if not line.get("partner_name"):

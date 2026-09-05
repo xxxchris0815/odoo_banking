@@ -189,6 +189,19 @@ def format_partner_name(transaction: dict[str, Any]) -> str | None:
     return partner_email(transaction)
 
 
+def stripe_customer_id(transaction: dict[str, Any]) -> str | None:
+    """Stripe ``cus_…`` from the expanded customer or a bare customer id."""
+    if (transaction.get("type") or "") in PAYOUT_TYPES:
+        return None
+    source = source_object(transaction)
+    customer = source.get("customer")
+    if isinstance(customer, str) and customer.strip():
+        return customer.strip()
+    if isinstance(customer, dict):
+        return (customer.get("id") or "").strip() or None
+    return None
+
+
 def partner_email(transaction: dict[str, Any]) -> str | None:
     source = source_object(transaction)
     billing = source.get("billing_details") or {}
@@ -274,6 +287,7 @@ def statement_line_from_transaction(
     amount = minor_to_major(transaction.get("amount") or 0, currency)
     partner = format_partner_name(transaction)
     email = partner_email(transaction)
+    customer_id = stripe_customer_id(transaction)
     tx_type = transaction.get("type") or ""
     detail = detail_label(transaction)
     status = status_label(transaction)
@@ -284,6 +298,7 @@ def statement_line_from_transaction(
             f"stripe={tx_id}",
             f"type={tx_type}" if tx_type else None,
             f"status={transaction.get('status')}" if transaction.get("status") else None,
+            f"customer={customer_id}" if customer_id else None,
             f"email={email}" if email else None,
             f"source={source.get('id')}" if source.get("id") else None,
             transaction.get("description"),
@@ -305,6 +320,8 @@ def statement_line_from_transaction(
         line["currency_code"] = currency
     if email:
         line["partner_email"] = email
+    if customer_id:
+        line["stripe_customer_id"] = customer_id
     return line
 
 

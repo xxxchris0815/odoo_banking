@@ -289,6 +289,12 @@ def payer_email(transaction: dict[str, Any]) -> str | None:
     return (payer.get("email_address") or name.get("email_address") or "").strip() or None
 
 
+def payer_account_id(transaction: dict[str, Any]) -> str | None:
+    """Stable PayPal account of the counterparty (Transaction Search ``account_id``)."""
+    payer = payer_info(transaction)
+    return (payer.get("account_id") or payer.get("payer_id") or "").strip() or None
+
+
 def cart_item_label(transaction: dict[str, Any]) -> str | None:
     items = (transaction.get("cart_info") or {}).get("item_details") or []
     names: list[str] = []
@@ -374,6 +380,7 @@ def statement_line_from_transaction(
     event = info.get("transaction_event_code") or ""
     partner = format_payer_name(transaction)
     email = payer_email(transaction)
+    payer_id = payer_account_id(transaction)
     detail = detail_label(transaction)
     status = status_label(transaction)
     amount = transaction_amount(transaction)
@@ -384,6 +391,7 @@ def statement_line_from_transaction(
             f"paypal={tx_id}",
             f"event={event}" if event else None,
             f"status={info.get('transaction_status')}" if info.get("transaction_status") else None,
+            f"payer={payer_id}" if payer_id else None,
             f"email={email}" if email else None,
             f"invoice={info.get('invoice_id')}" if info.get("invoice_id") else None,
             f"bank={info.get('bank_reference_id')}" if info.get("bank_reference_id") else None,
@@ -407,6 +415,8 @@ def statement_line_from_transaction(
         line["currency_code"] = currency
     if email:
         line["partner_email"] = email
+    if payer_id:
+        line["paypal_payer_id"] = payer_id
     return line
 
 

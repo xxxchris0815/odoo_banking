@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_partner_form_paypal_payer" model="ir.ui.view">
+        <field name="name">res.partner.form.paypal.payer</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='email'][1]" position="after">
+                <field name="paypal_payer_id" placeholder="PayPal account id"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

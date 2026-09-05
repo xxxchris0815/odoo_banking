@@ -13,6 +13,7 @@ from account_statement_import_online_stripe_reporting.lib.stripe_transactions im
     statement_line_from_transaction,
     statement_lines_from_transaction,
     statement_lines_from_transactions,
+    stripe_customer_id,
     transaction_net,
     verify_webhook_signature,
     webhook_url,
@@ -96,12 +97,22 @@ REFUND = {
 }
 
 
+def test_customer_id_accepts_expanded_object_or_bare_id():
+    assert stripe_customer_id(CHARGE) == "cus_TEST"
+    assert stripe_customer_id(KLARNA) is None
+    assert stripe_customer_id(PAYOUT) is None
+    bare = dict(CHARGE, source=dict(CHARGE["source"], customer="cus_BARE"))
+    assert stripe_customer_id(bare) == "cus_BARE"
+
+
 def test_charge_uses_billing_name_and_splits_fee():
     line, fee = statement_lines_from_transaction(CHARGE)
     assert line["amount"] == 249.0
     assert line["unique_import_id"] == "st:txn:txn_3U8M8iFYJ6FYzgBl1UxzKRsx"
     assert line["partner_name"] == "Ada Lovelace"
     assert line["account_number"] == "ada@example.com"
+    assert line["stripe_customer_id"] == "cus_TEST"
+    assert "customer=cus_TEST" in line["narration"]
     assert line["payment_ref"] == "[paid] Ada Lovelace — Tantric Quickies für Paare"
     assert line["date"] == datetime(2026, 8, 25, 15, 19, 53)
     assert fee["amount"] == -3.99
@@ -114,6 +125,7 @@ def test_klarna_payment_uses_email_when_name_is_missing():
     line, fee = statement_lines_from_transaction(KLARNA)
     assert line["partner_name"] == "buyer@example.com"
     assert line["account_number"] == "buyer@example.com"
+    assert "stripe_customer_id" not in line
     assert "Klarna" in line["payment_ref"]
     assert line["amount"] == 1100.0
     assert fee["amount"] == -33.24
@@ -123,6 +135,7 @@ def test_payout_has_no_false_partner():
     line = statement_line_from_transaction(PAYOUT)
     assert line["amount"] == -245.01
     assert line["partner_name"] is False
+    assert "stripe_customer_id" not in line
     assert line["payment_ref"] == "[paid] Payout — po_1U9DSSFYJ6FYzgBl7fqFVzQX"
 
 
