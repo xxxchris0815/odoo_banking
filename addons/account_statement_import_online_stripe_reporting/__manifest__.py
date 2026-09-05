@@ -1,8 +1,8 @@
 {
     "name": "Stripe Bank Feed (Expect Magic)",
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.1.0",
     "category": "Accounting",
-    "summary": "Stripe balance transactions (account_statement_import_online_stripe)",
+    "summary": "Stripe balance transactions (account_statement_import_online_stripe_reporting)",
     "author": "Expect Magic",
     "website": "https://github.com/xxxchris0815/odoo_banking",
     "license": "AGPL-3",

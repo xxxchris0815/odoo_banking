@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from account_statement_import_online_stripe.lib.stripe_transactions import (
+from account_statement_import_online_stripe_reporting.lib.stripe_transactions import (
     STRIPE_API_BASE,
     WEBHOOK_PATH_PREFIX,
     StripeClient,

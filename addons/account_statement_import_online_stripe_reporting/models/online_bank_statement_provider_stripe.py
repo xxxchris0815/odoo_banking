@@ -90,6 +90,21 @@ class OnlineBankStatementProviderStripe(models.Model):
         for rec in records:
             rec.stripe_webhook_token = new_webhook_token()
 
+    def _register_hook(self):
+        super()._register_hook()
+        self._stripe_hide_oca_credential_view()
+
+    @api.model
+    def _stripe_hide_oca_credential_view(self):
+        """OCA stripe uses the same service key and a second credentials group."""
+        view = self.env.ref(
+            "account_statement_import_online_stripe.online_bank_statement_provider_form",
+            raise_if_not_found=False,
+        )
+        if view and view.active:
+            view.sudo().write({"active": False})
+            _logger.info("Disabled OCA Stripe credential view (duplicate API key fields)")
+
     @api.depends("service", "stripe_webhook_token")
     def _compute_stripe_webhook_url(self):
         base = self._stripe_public_base_url()
@@ -101,10 +116,10 @@ class OnlineBankStatementProviderStripe(models.Model):
 
     def _compute_stripe_module_version(self):
         module = self.env["ir.module.module"].sudo().search(
-            [("name", "=", "account_statement_import_online_stripe")],
+            [("name", "=", "account_statement_import_online_stripe_reporting")],
             limit=1,
         )
-        version = module.latest_version or module.installed_version or "19.0.1.0.0"
+        version = module.latest_version or module.installed_version or "19.0.1.1.0"
         for rec in self:
             rec.stripe_module_version = version
 

@@ -172,8 +172,9 @@ Richtige Module (Apps, Filter *Apps* aus):
 
 | Anzeigename | Technischer Name | Version |
 | --- | --- | --- |
-| Community Banking Stack | `banking_community` | **19.0.1.6.0** |
+| Community Banking Stack | `banking_community` | **19.0.1.8.0** |
 | PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.4.0** |
+| Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.1.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -256,6 +257,11 @@ Auszahlungen nicht per n8n auf dieses Journal schreiben. Die Hausbank
 bekommt den Eingang aus ihrem eigenen Auszug; Abstimmung über Geldtransit.
 
 ### 6e Stripe
+
+Nicht das OCA-Modul *Online Bank Statements: Stripe*
+(`account_statement_import_online_stripe`, Autor OCA). Unseres heißt
+**Stripe Bank Feed (Expect Magic)**, technisch
+`account_statement_import_online_stripe_reporting`.
 
 Provider **Stripe**. Restricted Key reicht (Read auf Balance
 Transactions, Charges, Customers). `webhook_write` ist nicht nötig.

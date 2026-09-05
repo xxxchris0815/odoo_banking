@@ -22,7 +22,7 @@ dieses Repo als dünne Provider auf demselben Framework.
 
 ```
 PayPal API          ──►  account_statement_import_online_paypal_reporting
-Stripe API          ──►  account_statement_import_online_stripe
+Stripe API          ──►  account_statement_import_online_stripe_reporting
 GoCardless Einzüge  ──►  account_statement_import_online_gocardless_payments
 ZEN.COM Transfers   ──►  account_statement_import_online_zen   (dieses Repo)
 Jeeves CSV          ──►  account_statement_import_jeeves       (dieses Repo)
@@ -77,7 +77,7 @@ Aus [OCA/bank-statement-import](https://github.com/OCA/bank-statement-import/tre
 Dieses Repo:
 
 - `account_statement_import_online_paypal_reporting`
-- `account_statement_import_online_stripe`
+- `account_statement_import_online_stripe_reporting`
 - `account_statement_import_online_zen`
 - `account_statement_import_online_gocardless_payments`
 - `account_statement_import_jeeves`
