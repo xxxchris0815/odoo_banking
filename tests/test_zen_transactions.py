@@ -14,6 +14,7 @@ from account_statement_import_online_zen.lib.zen_transactions import (
     build_ssl_context,
     parse_webhook_events,
     payment_unique_id,
+    zen_query_dates,
     public_https_base,
     requests_get_mtls,
     statement_line_from_transaction,
@@ -147,7 +148,9 @@ def test_client_resolves_iban_and_paginates():
     assert [line["amount"] for line in lines] == [150.50, -20.00]
     assert any("accountId=acc-zen-1" in url for url in calls)
     assert any("bookedAtFrom=2026-08-01" in url for url in calls)
-    assert any(HISTORY_PATH in url for url in calls)
+    assert any("createdAtFrom=2026-08-01" in url for url in calls)
+    assert any("bookedAtTo=2026-08-30" in url for url in calls)
+    assert any(f"/{HISTORY_PATH}?" in url for url in calls)
     assert client.api_base.startswith(ZEN_DEFAULT_API_BASE)
 
 
@@ -383,6 +386,14 @@ def test_client_loads_payment_details_from_array():
     assert extras == {}
     assert lines[0]["amount"] == 246.20
     assert any(LIVE_PAYMENT["id"] in url for url in calls)
+
+
+def test_zen_query_dates_make_oca_until_inclusive_and_not_future():
+    start, end = zen_query_dates(
+        datetime(2026, 9, 4, 0, 0), datetime(2026, 9, 5, 0, 0)
+    )
+    assert start == "2026-09-04"
+    assert end == "2026-09-04"
 
 
 def test_webhook_url_is_https_per_account():

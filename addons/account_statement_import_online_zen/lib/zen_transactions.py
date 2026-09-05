@@ -11,16 +11,14 @@ import secrets
 import ssl
 import tempfile
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 from urllib.parse import urlencode, urljoin, urlparse
 
 ZEN_DEFAULT_API_BASE = "https://api-services.zen.com"
 ZEN_TEST_API_BASE = "https://api-services.zen-test.com"
 ACCOUNTS_PATH = "accounts/v1.0"
-# Live n8n / payment details use GET /payments/v1.0/{uuid}.
-# /payments/v1.0/history is treated as paymentId "history" and ZEN returns 500.
-HISTORY_PATH = "payments/v1.0"
+HISTORY_PATH = "payments/v1.0/history"
 PAYMENT_PATH = "payments/v1.0"
 WEBHOOK_PATH_PREFIX = "/zen/webhook"
 SETTLED_STATUS = "SETTLED"
@@ -250,6 +248,29 @@ def _as_date(value: datetime | date) -> str:
     if isinstance(value, datetime):
         return value.date().isoformat()
     return value.isoformat()
+
+
+def zen_query_dates(
+    date_since: datetime | date, date_until: datetime | date
+) -> tuple[str, str]:
+    """Inclusive yyyy-MM-dd window for ZEN history.
+
+    OCA ``date_until`` is exclusive (next midnight). ZEN ``*AtTo`` is inclusive
+    and a future ``bookedAtTo`` has produced ``INTERNAL_SERVER_ERROR``.
+    """
+    start = date_since.date() if isinstance(date_since, datetime) else date_since
+    if isinstance(date_until, datetime):
+        end = date_until.date()
+        if date_until.time() == datetime.min.time() and end > start:
+            end = end - timedelta(days=1)
+    else:
+        end = date_until
+    today = datetime.now(timezone.utc).date()
+    if end > today:
+        end = today
+    if end < start:
+        end = start
+    return start.isoformat(), end.isoformat()
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -513,6 +534,7 @@ class ZenClient:
         account_id: str | None = None,
     ) -> list[dict[str, Any]]:
         resolved_id = account_id or self.resolve_account_id()
+        start, end = zen_query_dates(date_since, date_until)
         collected: list[dict[str, Any]] = []
         last_entry_id = None
         while True:
@@ -520,8 +542,10 @@ class ZenClient:
                 HISTORY_PATH,
                 {
                     "accountId": resolved_id,
-                    "bookedAtFrom": _as_date(date_since),
-                    "bookedAtTo": _as_date(date_until),
+                    "createdAtFrom": start,
+                    "createdAtTo": end,
+                    "bookedAtFrom": start,
+                    "bookedAtTo": end,
                     "limit": self.page_limit,
                     "lastEntryId": last_entry_id,
                 },
