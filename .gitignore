@@ -1,0 +1,14 @@
+*.pyc
+*.pyo
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.env
+*.swp
+.idea/
+.vscode/
+*.pot

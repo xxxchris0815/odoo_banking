@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record model="ir.ui.view" id="online_bank_statement_provider_form_gc_payments">
+        <field name="name">online.bank.statement.provider.form.gocardless.payments</field>
+        <field name="model">online.bank.statement.provider</field>
+        <field
+            name="inherit_id"
+            ref="account_statement_import_online.online_bank_statement_provider_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='main']" position="inside">
+                <group
+                    name="gocardless_payments"
+                    string="Credentials"
+                    invisible="service != 'gocardless_payments'"
+                >
+                    <group>
+                        <field
+                            name="api_base"
+                            string="API base"
+                            groups="base.group_no_one"
+                        />
+                        <field
+                            name="password"
+                            string="Access Token"
+                            password="True"
+                            required="service == 'gocardless_payments'"
+                        />
+                        <field
+                            name="passphrase"
+                            string="Webhook Secret"
+                            password="True"
+                        />
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

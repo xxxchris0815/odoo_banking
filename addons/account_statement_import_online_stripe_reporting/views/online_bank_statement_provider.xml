@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record model="ir.ui.view" id="online_bank_statement_provider_form_stripe">
+        <field name="name">online.bank.statement.provider.form.stripe</field>
+        <field name="model">online.bank.statement.provider</field>
+        <field
+            name="inherit_id"
+            ref="account_statement_import_online.online_bank_statement_provider_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='main']" position="inside">
+                <group
+                    name="stripe_reporting"
+                    string="Stripe"
+                    invisible="service != 'stripe'"
+                >
+                    <group>
+                        <field name="stripe_module_version" readonly="1" />
+                        <field
+                            name="api_base"
+                            string="API base"
+                            groups="base.group_no_one"
+                        />
+                        <field
+                            name="password"
+                            string="API key"
+                            password="True"
+                            required="service == 'stripe'"
+                        />
+                        <field
+                            name="stripe_webhook_url"
+                            string="Webhook URL"
+                            widget="CopyClipboardChar"
+                            readonly="1"
+                        />
+                        <field name="stripe_webhook_token" invisible="1" />
+                        <field
+                            name="stripe_webhook_secret"
+                            string="Webhook signing secret"
+                            password="True"
+                            placeholder="whsec_… from the Stripe Dashboard"
+                        />
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

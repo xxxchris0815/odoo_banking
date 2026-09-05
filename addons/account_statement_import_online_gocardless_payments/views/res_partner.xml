@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_partner_form_gocardless_customer" model="ir.ui.view">
+        <field name="name">res.partner.form.gocardless.customer</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='email'][1]" position="after">
+                <field name="gocardless_customer_id" placeholder="CUxxxxxxxxxx"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

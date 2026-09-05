@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record model="ir.ui.view" id="online_bank_statement_provider_form_jeeves">
+        <field name="name">online.bank.statement.provider.form.jeeves</field>
+        <field name="model">online.bank.statement.provider</field>
+        <field
+            name="inherit_id"
+            ref="account_statement_import_online.online_bank_statement_provider_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='main']" position="inside">
+                <group
+                    name="jeeves_mcp"
+                    string="Jeeves MCP"
+                    invisible="service != 'jeeves'"
+                >
+                    <group>
+                        <field
+                            name="api_base"
+                            string="MCP URL"
+                            placeholder="https://mcp-prod.jeev.es/mcp"
+                            groups="base.group_no_one"
+                        />
+                        <field
+                            name="username"
+                            string="Account id"
+                            placeholder="UUID from list_accounts, or empty"
+                            help="Jeeves productAccountId (Cash EUR/USD/GBP). Leave empty to pick the active cash account that matches this journal currency."
+                        />
+                        <field
+                            name="password"
+                            string="MCP API key"
+                            password="True"
+                            required="service == 'jeeves'"
+                        />
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

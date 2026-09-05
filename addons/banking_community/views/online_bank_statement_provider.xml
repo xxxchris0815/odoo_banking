@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record model="ir.ui.view" id="online_bank_statement_provider_form_credentials">
+        <field name="name">online.bank.statement.provider.form.stack.credentials</field>
+        <field name="model">online.bank.statement.provider</field>
+        <field
+            name="inherit_id"
+            ref="account_statement_import_online.online_bank_statement_provider_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='main']" position="inside">
+                <group
+                    name="stack_credentials"
+                    string="Credentials"
+                    invisible="service == 'paypal' or service == 'stripe' or service == 'zen' or service == 'gocardless_payments' or service == 'jeeves'"
+                >
+                    <group>
+                        <field name="username" string="Client ID / Account UUID" />
+                        <field
+                            name="password"
+                            string="Secret / Access Token / API Key"
+                            password="True"
+                        />
+                        <field
+                            name="passphrase"
+                            string="Webhook Secret"
+                            password="True"
+                        />
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

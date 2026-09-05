@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record model="ir.ui.view" id="online_bank_statement_provider_form_zen">
+        <field name="name">online.bank.statement.provider.form.zen</field>
+        <field name="model">online.bank.statement.provider</field>
+        <field
+            name="inherit_id"
+            ref="account_statement_import_online.online_bank_statement_provider_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='main']" position="inside">
+                <group name="zen" string="Credentials" invisible="service != 'zen'">
+                    <group>
+                        <field
+                            name="api_base"
+                            string="API base"
+                            groups="base.group_no_one"
+                        />
+                        <field
+                            name="username"
+                            string="Account UUID"
+                        />
+                        <field
+                            name="password"
+                            string="API Key"
+                            password="True"
+                            required="service == 'zen'"
+                        />
+                        <field
+                            name="zen_webhook_url"
+                            string="Webhook URL"
+                            widget="CopyClipboardChar"
+                            readonly="1"
+                        />
+                        <field name="zen_webhook_token" invisible="1" />
+                        <field
+                            name="certificate_public_key"
+                            string="mTLS client certificate"
+                            placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"
+                        />
+                        <field
+                            name="certificate_private_key"
+                            string="mTLS private key"
+                            placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----END PRIVATE KEY-----"
+                        />
+                        <field
+                            name="certificate_chain"
+                            string="mTLS CA chain"
+                            placeholder="optional — only if ZEN sent a CA file"
+                        />
+                        <field
+                            name="passphrase"
+                            string="Private key passphrase"
+                            password="True"
+                        />
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

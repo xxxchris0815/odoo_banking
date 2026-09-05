@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_jeeves_vendor_wizard_form" model="ir.ui.view">
+        <field name="name">jeeves.vendor.wizard.form</field>
+        <field name="model">jeeves.vendor.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Jeeves vendor">
+                <sheet>
+                    <div class="alert alert-info" role="alert">
+                        <strong>Von Jeeves laden</strong> füllt nur dieses
+                        Formular. <strong>Nach Odoo schreiben</strong> legt
+                        die Felder auf den Kontakt. <strong>Write to Jeeves</strong>
+                        sendet Odoo nach Jeeves.
+                    </div>
+                    <div class="alert alert-info" role="alert" invisible="not match_note">
+                        <field name="match_note" nolabel="1"/>
+                    </div>
+                    <div class="alert alert-warning" role="alert" invisible="not missing_note">
+                        <field name="missing_note" nolabel="1"/>
+                    </div>
+                    <group>
+                        <group string="Supplier">
+                            <field name="partner_id" readonly="1"/>
+                            <field name="vendor_id" placeholder="Filled after create or search"/>
+                            <field name="entity_type"/>
+                            <field name="company_name" invisible="entity_type != 'COMPANY'" required="entity_type == 'COMPANY'"/>
+                            <field name="first_name" invisible="entity_type != 'PERSONAL'" required="entity_type == 'PERSONAL'"/>
+                            <field name="last_name" invisible="entity_type != 'PERSONAL'" required="entity_type == 'PERSONAL'"/>
+                            <field name="email" required="1"/>
+                            <field
+                                name="phone"
+                                required="1"
+                                placeholder="+49 151 …"
+                            />
+                        </group>
+                        <group string="Address">
+                            <field name="street" required="1"/>
+                            <field name="zip" required="1"/>
+                            <field name="city" required="1"/>
+                            <field name="state" placeholder="n/a if none"/>
+                            <field name="country_id" required="1"/>
+                        </group>
+                    </group>
+                    <group string="Payout">
+                        <group>
+                            <field name="bank_country_id" required="1"/>
+                            <field name="currency_id" required="1"/>
+                            <field name="payment_method" required="1"/>
+                        </group>
+                        <group>
+                            <field name="iban"/>
+                            <field name="account_last4" invisible="1"/>
+                            <field name="account_number"/>
+                            <field name="account_name"/>
+                            <field name="swift"/>
+                            <field name="bank_name"/>
+                        </group>
+                    </group>
+                </sheet>
+                <footer>
+                    <button
+                        name="action_write_to_odoo"
+                        type="object"
+                        string="Nach Odoo schreiben"
+                        class="btn-primary"
+                    />
+                    <button
+                        name="action_load_from_jeeves"
+                        type="object"
+                        string="Von Jeeves laden"
+                        class="btn-secondary"
+                    />
+                    <button
+                        name="action_submit"
+                        type="object"
+                        string="Write to Jeeves"
+                        class="btn-secondary"
+                    />
+                    <button
+                        name="action_link"
+                        type="object"
+                        string="Link ID only"
+                        invisible="not vendor_id"
+                    />
+                    <button special="cancel" string="Schließen"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>
