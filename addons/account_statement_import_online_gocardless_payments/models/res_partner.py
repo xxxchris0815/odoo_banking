@@ -13,11 +13,3 @@ class ResPartner(models.Model):
         help="GoCardless customer id (CUxxx). Filled on the first unique "
         "e-mail or IBAN match; later collections use this id.",
     )
-
-    _sql_constraints = [
-        (
-            "gocardless_customer_id_uniq",
-            "unique(gocardless_customer_id)",
-            "This GoCardless customer is already linked to another contact.",
-        ),
-    ]

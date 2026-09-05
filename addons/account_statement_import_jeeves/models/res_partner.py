@@ -13,11 +13,3 @@ class ResPartner(models.Model):
         help="Jeeves Vendor Id. Filled on the first unique e-mail match; "
         "later CSV rows use this id.",
     )
-
-    _sql_constraints = [
-        (
-            "jeeves_vendor_id_uniq",
-            "unique(jeeves_vendor_id)",
-            "This Jeeves vendor is already linked to another contact.",
-        ),
-    ]

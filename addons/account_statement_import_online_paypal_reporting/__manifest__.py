@@ -1,6 +1,6 @@
 {
     "name": "PayPal Bank Feed (Expect Magic)",
-    "version": "19.0.1.6.0",
+    "version": "19.0.1.7.0",
     "category": "Accounting",
     "summary": "PayPal Transaction Search (account_statement_import_online_paypal_reporting)",
     "author": "Expect Magic",

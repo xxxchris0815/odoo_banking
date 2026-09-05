@@ -13,11 +13,3 @@ class ResPartner(models.Model):
         help="PayPal account id of this contact. Filled on the first unique "
         "e-mail match; later payments use this id.",
     )
-
-    _sql_constraints = [
-        (
-            "paypal_payer_id_uniq",
-            "unique(paypal_payer_id)",
-            "This PayPal payer is already linked to another contact.",
-        ),
-    ]

@@ -173,11 +173,11 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Anzeigename | Technischer Name | Version |
 | --- | --- | --- |
 | Community Banking Stack | `banking_community` | **19.0.1.8.0** |
-| PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.6.0** |
-| Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.5.0** |
+| PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.7.0** |
+| Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.6.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.13.0** |
-| Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.11.0** |
-| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.1.0** |
+| Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.12.0** |
+| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.2.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -189,8 +189,18 @@ ls /opt/odoo/extra-addons/odoo_banking/addons/account_statement_import_online_pa
 docker exec odoo_app ls /opt/odoo/extra-addons/odoo_banking/addons/account_statement_import_online_paypal_reporting/__manifest__.py
 ```
 
-Ohne diese Datei: `git pull` im Repo, Container neu starten, dann erst
-die Apps-Liste.
+Ohne diese Datei: `git pull` im Repo. Neue Felder an Kontakt/Journal
+nicht nur mit `docker restart` laden — das ergibt 500
+(`column res_partner.… does not exist`). Erst upgraden, dann starten:
+
+```bash
+cd /opt/odoo/extra-addons/odoo_banking
+git pull origin cursor/community-banking-stack-f606
+docker exec odoo_app /entrypoint.sh odoo \
+  -u account_statement_import_jeeves,account_statement_import_online_paypal_reporting,account_statement_import_online_stripe_reporting,account_statement_import_online_gocardless_payments,account_statement_import_online_zen \
+  -d db_odoo --stop-after-init --no-http
+docker restart odoo_app
+```
 
 Nicht das OCA-Modul `account_statement_import_online_paypal` (Service
 *PayPal.com*, Autor CorporateHub/OCA) — das legt die zweite
@@ -623,6 +633,7 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 
 | Symptom | Typische Ursache |
 | --- | --- |
+| Ganze Odoo-Seite 500 nach `git pull` + Restart | Neue Spalte an `res.partner` (PayPal/Stripe/GC/Jeeves-ID) ohne Modul-Upgrade. Log: `column res_partner.… does not exist`. Fix: `odoo -u account_statement_import_jeeves,… -d db_odoo --stop-after-init --no-http`, dann `docker restart odoo_app`. Nicht die Apps-UI, solange /web tot ist. |
 | Kein Menü „Online Bank Statement Providers“ | Gruppe volle Buchhaltung fehlt, oder `account_statement_import_online` nicht installiert |
 | Provider-Feld am Journal fehlt | Journal-Typ ist nicht Bank |
 | PayPal pull leer | Sandbox-Key, oder Zeitraum älter als 3 Jahre |
