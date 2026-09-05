@@ -175,7 +175,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Community Banking Stack | `banking_community` | **19.0.1.8.0** |
 | PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.4.0** |
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.3.0** |
-| Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.9.0** |
+| Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.10.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach

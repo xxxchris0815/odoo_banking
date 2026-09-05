@@ -229,9 +229,19 @@ class OnlineBankStatementProviderZen(models.Model):
             raise UserError(str(error)) from error
         filtered = self._zen_filter_lines(lines)
         if not filtered:
+            _logger.info(
+                "ZEN webhook payment %s produced no new statement lines",
+                payment_id,
+            )
             return True
         dates = [line["date"] for line in filtered]
-        self._create_or_update_statement(
+        statement = self._create_or_update_statement(
             (filtered, extras), min(dates), max(dates) + timedelta(days=1)
+        )
+        _logger.info(
+            "ZEN webhook booked payment %s (%s lines) on %s",
+            payment_id,
+            len(filtered),
+            statement.name if statement else "existing-or-empty",
         )
         return True

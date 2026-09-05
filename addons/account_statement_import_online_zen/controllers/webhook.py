@@ -47,10 +47,17 @@ class ZenTransfersWebhook(http.Controller):
 
         events = parse_webhook_events(payload)
         if not events:
+            _logger.info("ZEN webhook accepted but no paymentId in body: %s", payload)
             return request.make_response("ok", status=200)
 
         try:
             for event in events:
+                _logger.info(
+                    "ZEN webhook payment=%s account=%s status=%s",
+                    event.get("payment_id"),
+                    event.get("account_id"),
+                    event.get("status"),
+                )
                 provider = providers._zen_provider_for_account(event.get("account_id"))
                 if not provider:
                     _logger.warning(
