@@ -174,7 +174,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | --- | --- | --- |
 | Community Banking Stack | `banking_community` | **19.0.1.8.0** |
 | PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.4.0** |
-| Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.2.0** |
+| Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.3.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -280,6 +280,12 @@ manuell im Dashboard.
 
 Erwartung: `[paid] Kundenname — Produkt`, `[fee] Stripe — txn_…`,
 `[paid] Payout — po_…`. `unique_import_id` = `st:txn:…`.
+
+Saldo: PayPal schickt `available_balance` auf jeder Transaktion. Stripe
+nicht — `/v1/balance` ist nur das Guthaben *jetzt*. Der Feed rekonstruiert
+das Wallet zum Auszugsende: aktuelles Guthaben (available + pending)
+minus Netto aller späteren Balance Transactions. GoCardless ist Clearing,
+kein Wallet, und setzt deshalb keine Salden.
 
 ### 6b ZEN.COM
 
@@ -550,7 +556,7 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 | PayPal pull leer | Sandbox-Key, oder Zeitraum älter als 3 Jahre |
 | PayPal-Formular zeigt Client ID zweimal | OCA-Modul `account_statement_import_online_paypal` ist noch aktiv, oder Stack nicht auf **19.0.1.6.0**. Richtig: `account_statement_import_online_paypal_reporting` **19.0.1.4.0** (Expect Magic). OCA-PayPal deinstallieren, Stack + PayPal-Reporting upgraden. Im Provider-Formular steht die Version unter **Module version**. |
 | PayPal lehnt die Webhook-URL ab (http) | Odoo speichert oft `http://…:8069`. Ab 19.0.1.4.0 wird daraus `https://deine-domain` ohne Port. Zusätzlich Einstellungen → Technische Parameter `web.base.url` auf `https://erp.…` setzen. |
-| Stripe: running balance matches not ending | Alte Version schrieb das Live-Guthaben (0 nach Payout) als Tages-Endsaldo. Ab 19.0.1.2.0 Endsaldo = Start + Zeilen. Bestehenden Auszug: Endsaldo auf den Computed Balance setzen oder Auszug löschen und neu pullen. |
+| Stripe: running balance matches not ending | Live-`/v1/balance` ist oft 0, weil das Payout später kam. Ab **19.0.1.3.0** ist der Endsaldo das Stripe-Wallet *an dem Tag* (jetzt minus spätere Nets). Bestehenden Auszug `BNK4/…`: Endsaldo auf den Computed Balance setzen **oder** Auszug samt Zeilen löschen und den Tag neu pullen. Ein zweiter Pull allein ändert den alten Endsaldo nicht. |
 | ZEN 403 | Terminal-Key statt Transfers-Key |
 | GoCardless-Einzug fehlt | Access Token Live/Sandbox verdreht, oder Webhook-URL nicht erreichbar |
 | Fail erzeugt eine zweite Zeile | n8n schreibt noch parallel; nur der Payments-Provider darf dieses Journal füllen |

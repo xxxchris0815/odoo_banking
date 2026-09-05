@@ -9,6 +9,8 @@ from .stripe_transactions import (  # noqa: F401
     new_webhook_token,
     public_https_base,
     statement_line_from_transaction,
+    historical_wallet_extras,
+    transaction_net,
     statement_lines_from_transactions,
     verify_webhook_signature,
     webhook_url,

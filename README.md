@@ -135,8 +135,12 @@ braucht der Key nicht — den Hook legst du manuell im Dashboard an.
 | Erstattung | `[paid] Refund — …` | wenn Stripe einen Namen schickt |
 
 `unique_import_id` = `st:txn:{id}` bzw. `:fee`. Webhook pro Konto:
-`https://DEINE-DOMAIN/stripe/webhook/<token>` (immer HTTPS). Details:
-SETUP.md Schritt 6e.
+`https://DEINE-DOMAIN/stripe/webhook/<token>` (immer HTTPS).
+
+Auszugssaldo: nicht das Live-Guthaben (nach einem Payout oft 0), sondern
+das Wallet zum Tagesende — analog zu PayPals `available_balance` auf der
+Transaktion. GoCardless bleibt ohne Saldo (Clearing). Details: SETUP.md
+Schritt 6e.
 
 ### GoCardless Payments — Clearing-Journal (dieses Repo)
 

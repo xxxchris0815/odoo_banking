@@ -119,7 +119,7 @@ class OnlineBankStatementProviderStripe(models.Model):
             [("name", "=", "account_statement_import_online_stripe_reporting")],
             limit=1,
         )
-        version = module.latest_version or module.installed_version or "19.0.1.2.0"
+        version = module.latest_version or module.installed_version or "19.0.1.3.0"
         for rec in self:
             rec.stripe_module_version = version
 
@@ -171,11 +171,12 @@ class OnlineBankStatementProviderStripe(models.Model):
         return filtered, extras
 
     def _update_statement_balances(self, statement_values):
-        """Ending balance = start + this statement's lines, not Stripe live."""
+        """Keep extras when Stripe reconstructed the wallet; else start + lines."""
         if self.service != "stripe":
             return super()._update_statement_balances(statement_values)
-        statement_values.pop("balance_end_real", None)
         super()._update_statement_balances(statement_values)
+        if "balance_end_real" in statement_values:
+            return
         total = 0.0
         for command in statement_values.get("line_ids") or []:
             if (

@@ -424,15 +424,16 @@ class StripeClient:
     def list_transactions(
         self,
         date_since: datetime | date,
-        date_until: datetime | date,
+        date_until: datetime | date | None = None,
         *,
         currency: str | None = None,
+        expand: bool = True,
     ) -> list[dict[str, Any]]:
         since = _naive_dt(date_since)
-        until = _naive_dt(date_until)
-        if since is None or until is None:
-            raise StripeConfigError("Stripe pull needs a start and end date")
-        if since >= until:
+        until = _naive_dt(date_until) if date_until is not None else None
+        if since is None:
+            raise StripeConfigError("Stripe pull needs a start date")
+        if until is not None and since >= until:
             return []
         collected: list[dict[str, Any]] = []
         starting_after = None
@@ -440,9 +441,13 @@ class StripeClient:
             params: dict[str, Any] = {
                 "limit": self.page_limit,
                 "created[gte]": int(since.replace(tzinfo=timezone.utc).timestamp()),
-                "created[lt]": int(until.replace(tzinfo=timezone.utc).timestamp()),
-                "expand[]": ["data.source", "data.source.customer"],
             }
+            if until is not None:
+                params["created[lt]"] = int(
+                    until.replace(tzinfo=timezone.utc).timestamp()
+                )
+            if expand:
+                params["expand[]"] = ["data.source", "data.source.customer"]
             if starting_after:
                 params["starting_after"] = starting_after
             payload = self._request("GET", "/v1/balance_transactions", params)
@@ -462,6 +467,22 @@ class StripeClient:
             ]
         return collected
 
+    def current_wallet(self, currency: str | None) -> float:
+        """Live Stripe balance for one currency (available + pending).
+
+        ``/v1/balance`` is only “now”. Historical extras subtract later nets.
+        """
+        payload = self._request("GET", "/v1/balance")
+        wanted = (currency or "").lower()
+        total = 0.0
+        for bucket in ("available", "pending"):
+            for row in payload.get(bucket) or []:
+                code = (row.get("currency") or "").lower()
+                if wanted and code != wanted:
+                    continue
+                total += minor_to_major(row.get("amount") or 0, code or "EUR")
+        return total
+
     def obtain_statement_lines(
         self,
         date_since: datetime | date,
@@ -475,7 +496,43 @@ class StripeClient:
         lines = statement_lines_from_transactions(
             transactions, date_since, date_until, currency=currency
         )
-        # Do not pass Stripe's live /v1/balance. OCA pulls one calendar day
-        # at a time; "available now" (often 0 after a payout) becomes that
-        # day's ending balance and trips the running-balance warning.
-        return lines, {}
+        extras = {}
+        try:
+            extras = historical_wallet_extras(
+                self.current_wallet(currency),
+                transactions,
+                self.list_transactions(
+                    date_until, None, currency=currency, expand=False
+                ),
+                currency,
+            )
+        except StripeHTTPError as error:
+            _logger.info("Stripe historical balance skipped: %s", error)
+        return lines, extras
+
+
+def transaction_net(transaction: dict[str, Any], currency: str | None = None) -> float:
+    code = (currency or transaction.get("currency") or "EUR").upper()
+    return minor_to_major(transaction.get("net") or 0, code)
+
+
+def historical_wallet_extras(
+    current_wallet: float,
+    window_transactions: list[dict[str, Any]],
+    later_transactions: list[dict[str, Any]],
+    currency: str | None,
+) -> dict[str, Any]:
+    """Wallet at the window end — same extras keys as PayPal.
+
+    PayPal puts ``available_balance`` on each transaction. Stripe does not.
+    GoCardless is clearing, not a wallet, so it sends no extras.
+
+    Reconstruct: wallet_then = wallet_now − sum(net of later BTs).
+    """
+    later_net = sum(transaction_net(tx, currency) for tx in later_transactions)
+    window_net = sum(transaction_net(tx, currency) for tx in window_transactions)
+    end = float(current_wallet) - later_net
+    return {
+        "balance_start": end - window_net,
+        "balance_end_real": end,
+    }

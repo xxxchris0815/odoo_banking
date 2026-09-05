@@ -8,10 +8,12 @@ from account_statement_import_online_stripe_reporting.lib.stripe_transactions im
     StripeClient,
     StripeConfigError,
     StripeHTTPError,
+    historical_wallet_extras,
     public_https_base,
     statement_line_from_transaction,
     statement_lines_from_transaction,
     statement_lines_from_transactions,
+    transaction_net,
     verify_webhook_signature,
     webhook_url,
 )
@@ -215,14 +217,30 @@ def test_client_paginates_and_expands_source():
         from urllib.parse import parse_qs
 
         query = parse_qs(parsed.query)
-        assert "data.source" in query.get("expand[]", [])
-        if "starting_after" in query:
-            return 200, pages[1]
-        return 200, pages[0]
+        since = int((query.get("created[gte]") or ["0"])[0])
+        until = query.get("created[lt]")
+        if until:
+            assert "data.source" in query.get("expand[]", [])
+            if "starting_after" in query:
+                return 200, pages[1]
+            return 200, pages[0]
+        later = [
+            row
+            for row in (CHARGE, PAYOUT)
+            if int(row["created"]) >= since
+        ]
+        return 200, {"data": later, "has_more": False}
+
+    def balance(_parsed, _headers, _data):
+        return 200, {
+            "available": [{"amount": 0, "currency": "eur"}],
+            "pending": [{"amount": 0, "currency": "eur"}],
+        }
 
     http = _FakeHttp(
         {
             ("GET", "/v1/balance_transactions"): listing,
+            ("GET", "/v1/balance"): balance,
         }
     )
     client = StripeClient("rk_test", http_request=http, page_limit=1)
@@ -231,8 +249,10 @@ def test_client_paginates_and_expands_source():
     )
     ids = [line["unique_import_id"] for line in lines]
     assert ids[0].startswith("st:txn:")
-    assert extras == {}
+    assert extras["balance_start"] == pytest.approx(0.0)
+    assert extras["balance_end_real"] == pytest.approx(0.0)
     assert any(call[1].startswith(STRIPE_API_BASE) for call in http.calls)
+    assert any("/v1/balance" in call[1] for call in http.calls)
 
 
 def test_live_shape_charge_then_payout_nets_fee():
@@ -240,3 +260,56 @@ def test_live_shape_charge_then_payout_nets_fee():
         [CHARGE, PAYOUT], datetime(2026, 8, 25), datetime(2026, 8, 29)
     )
     assert [line["amount"] for line in lines] == [249.0, -3.99, -245.01]
+
+
+def test_historical_wallet_uses_later_nets_not_live_zero():
+    """Aug 25 still held 245.01 even though today's available is 0 after payout."""
+    extras = historical_wallet_extras(0.0, [CHARGE], [PAYOUT], "EUR")
+    assert extras["balance_start"] == pytest.approx(0.0)
+    assert extras["balance_end_real"] == pytest.approx(245.01)
+    assert transaction_net(CHARGE, "EUR") == pytest.approx(245.01)
+    assert transaction_net(PAYOUT, "EUR") == pytest.approx(-245.01)
+
+
+def test_historical_wallet_includes_pending_in_live_balance():
+    extras = historical_wallet_extras(245.01, [CHARGE], [], "EUR")
+    assert extras["balance_start"] == pytest.approx(0.0)
+    assert extras["balance_end_real"] == pytest.approx(245.01)
+
+
+def test_client_reconstructs_aug_25_wallet_after_later_payout():
+    def listing(parsed, _headers, _data):
+        from urllib.parse import parse_qs
+
+        query = parse_qs(parsed.query)
+        since = int((query.get("created[gte]") or ["0"])[0])
+        until = query.get("created[lt]")
+        rows = []
+        for row in (CHARGE, PAYOUT):
+            created = int(row["created"])
+            if created < since:
+                continue
+            if until and created >= int(until[0]):
+                continue
+            rows.append(row)
+        return 200, {"data": rows, "has_more": False}
+
+    def balance(_parsed, _headers, _data):
+        return 200, {
+            "available": [{"amount": 0, "currency": "eur"}],
+            "pending": [{"amount": 0, "currency": "eur"}],
+        }
+
+    http = _FakeHttp(
+        {
+            ("GET", "/v1/balance_transactions"): listing,
+            ("GET", "/v1/balance"): balance,
+        }
+    )
+    client = StripeClient("rk_test", http_request=http)
+    lines, extras = client.obtain_statement_lines(
+        datetime(2026, 8, 25), datetime(2026, 8, 26), currency="EUR"
+    )
+    assert [line["amount"] for line in lines] == [249.0, -3.99]
+    assert extras["balance_start"] == pytest.approx(0.0)
+    assert extras["balance_end_real"] == pytest.approx(245.01)
