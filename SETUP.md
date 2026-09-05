@@ -159,6 +159,17 @@ nicht zwingend das OCA-Modul *PayPal.com*. Wenn beide installiert sind:
 4. **Client ID** und **Secret** kopieren.
 5. Unter **Features** nur **Transaction Search** aktiv lassen, speichern.
 
+Richtige Module (Apps, Filter *Apps* aus):
+
+| Anzeigename | Technischer Name | Version |
+| --- | --- | --- |
+| Community Banking Stack | `banking_community` | **19.0.1.6.0** |
+| Online Bank Statements: PayPal | `account_statement_import_online_paypal_reporting` | **19.0.1.2.0**, Autor Expect Magic |
+
+Nicht das OCA-Modul `account_statement_import_online_paypal` (Service
+*PayPal.com*, Autor CorporateHub/OCA) — das legt die zweite
+Credentials-Gruppe. Deinstallieren.
+
 Sandbox-Keys funktionieren nicht gegen die Live-API. Umgekehrt auch nicht.
 
 #### B) Journal und Provider in Odoo
@@ -476,6 +487,7 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 | Kein Menü „Online Bank Statement Providers“ | Gruppe volle Buchhaltung fehlt, oder `account_statement_import_online` nicht installiert |
 | Provider-Feld am Journal fehlt | Journal-Typ ist nicht Bank |
 | PayPal pull leer | Sandbox-Key, oder Zeitraum älter als 3 Jahre |
+| PayPal-Formular zeigt Client ID zweimal | OCA-Modul `account_statement_import_online_paypal` ist noch aktiv, oder Stack nicht auf **19.0.1.6.0**. Richtig: `account_statement_import_online_paypal_reporting` **19.0.1.2.0** (Expect Magic). OCA-PayPal deinstallieren, Stack + PayPal-Reporting upgraden. Im Provider-Formular steht die Version unter **Module version**. |
 | ZEN 403 | Terminal-Key statt Transfers-Key |
 | GoCardless-Einzug fehlt | Access Token Live/Sandbox verdreht, oder Webhook-URL nicht erreichbar |
 | Fail erzeugt eine zweite Zeile | n8n schreibt noch parallel; nur der Payments-Provider darf dieses Journal füllen |

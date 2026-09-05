@@ -10,11 +10,12 @@
         <field name="arch" type="xml">
             <xpath expr="//group[@name='main']" position="inside">
                 <group
-                    name="paypal"
+                    name="paypal_reporting"
                     string="PayPal"
                     invisible="service != 'paypal'"
                 >
                     <group>
+                        <field name="paypal_module_version" readonly="1" />
                         <field
                             name="api_base"
                             string="API base"

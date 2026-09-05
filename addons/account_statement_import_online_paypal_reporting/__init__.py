@@ -7,3 +7,4 @@ if importlib.util.find_spec("odoo"):
 
 def post_init_hook(env):
     env["online.bank.statement.provider"]._paypal_assign_missing_tokens()
+    env["online.bank.statement.provider"]._paypal_hide_oca_credential_view()

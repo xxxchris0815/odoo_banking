@@ -51,6 +51,10 @@ class OnlineBankStatementProviderPayPal(models.Model):
         string="Webhook URL",
         compute="_compute_paypal_webhook_url",
     )
+    paypal_module_version = fields.Char(
+        string="Module version",
+        compute="_compute_paypal_module_version",
+    )
 
     @api.model
     def _get_available_services(self):
@@ -90,6 +94,21 @@ class OnlineBankStatementProviderPayPal(models.Model):
         for rec in records:
             rec.paypal_webhook_token = new_webhook_token()
 
+    def _register_hook(self):
+        super()._register_hook()
+        self._paypal_hide_oca_credential_view()
+
+    @api.model
+    def _paypal_hide_oca_credential_view(self):
+        """OCA paypal adds a second Client ID/Secret group on the same form."""
+        view = self.env.ref(
+            "account_statement_import_online_paypal.online_bank_statement_provider_form",
+            raise_if_not_found=False,
+        )
+        if view and view.active:
+            view.sudo().write({"active": False})
+            _logger.info("Disabled OCA PayPal credential view (duplicate Client ID fields)")
+
     @api.depends("service", "paypal_webhook_token")
     def _compute_paypal_webhook_url(self):
         base = self._paypal_public_base_url()
@@ -98,6 +117,15 @@ class OnlineBankStatementProviderPayPal(models.Model):
                 rec.paypal_webhook_url = webhook_url(base, rec.paypal_webhook_token)
             else:
                 rec.paypal_webhook_url = False
+
+    def _compute_paypal_module_version(self):
+        module = self.env["ir.module.module"].sudo().search(
+            [("name", "=", "account_statement_import_online_paypal_reporting")],
+            limit=1,
+        )
+        version = module.latest_version or module.installed_version or "19.0.1.2.0"
+        for rec in self:
+            rec.paypal_module_version = version
 
     def _paypal_public_base_url(self):
         return (

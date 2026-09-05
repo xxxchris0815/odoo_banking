@@ -1,6 +1,6 @@
 {
     "name": "Online Bank Statements: PayPal",
-    "version": "19.0.1.1.0",
+    "version": "19.0.1.2.0",
     "category": "Accounting",
     "summary": "PayPal Transaction Search into bank statements (names, fees, withdrawals)",
     "author": "Expect Magic",
