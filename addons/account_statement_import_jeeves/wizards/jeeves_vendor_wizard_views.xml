@@ -7,10 +7,10 @@
             <form string="Jeeves vendor">
                 <sheet>
                     <div class="alert alert-info" role="alert">
-                        Zwei Richtungen: <strong>Write to Jeeves</strong> sendet
-                        Odoo nach Jeeves. <strong>Von Jeeves nach Odoo</strong>
-                        liest den Vendor und schreibt Telefon, Adresse und
-                        Bankland auf den Kontakt.
+                        <strong>Von Jeeves laden</strong> füllt nur dieses
+                        Formular. <strong>Nach Odoo schreiben</strong> legt
+                        die Felder auf den Kontakt. <strong>Write to Jeeves</strong>
+                        sendet Odoo nach Jeeves.
                     </div>
                     <div class="alert alert-info" role="alert" invisible="not match_note">
                         <field name="match_note" nolabel="1"/>
@@ -58,15 +58,21 @@
                 </sheet>
                 <footer>
                     <button
-                        name="action_submit"
+                        name="action_write_to_odoo"
                         type="object"
-                        string="Write to Jeeves"
+                        string="Nach Odoo schreiben"
                         class="btn-primary"
                     />
                     <button
-                        name="action_import_to_odoo"
+                        name="action_load_from_jeeves"
                         type="object"
-                        string="Von Jeeves nach Odoo"
+                        string="Von Jeeves laden"
+                        class="btn-secondary"
+                    />
+                    <button
+                        name="action_submit"
+                        type="object"
+                        string="Write to Jeeves"
                         class="btn-secondary"
                     />
                     <button
@@ -75,7 +81,7 @@
                         string="Link ID only"
                         invisible="not vendor_id"
                     />
-                    <button special="cancel" string="Cancel"/>
+                    <button special="cancel" string="Schließen"/>
                 </footer>
             </form>
         </field>

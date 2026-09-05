@@ -177,7 +177,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.6.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.13.0** |
 | Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.12.0** |
-| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.10.0** |
+| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.11.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -463,11 +463,10 @@ in Jeeves*):
 2. Bankland kommt aus der IBAN (`LT…` → Litauen), nicht aus dem
    Kontaktland. Der graue Text `+49 151…` ist nur ein Platzhalter.
 3. Der Assistent sucht per `get_vendor` / `list_vendors` nach Vendor-ID,
-   E-Mail oder Name. **Von Jeeves nach Odoo** lädt Telefon, Adresse und
-   Bankland aus Jeeves und schreibt sie auf den Kontakt. **Write to
-   Jeeves** sendet die Odoo-Felder nach Jeeves (`update_vendor` oder
-   `create_vendor`). Maskierte Kontonummern (`****3012`) überschreiben
-   keine IBAN.
+   E-Mail oder Name. **Von Jeeves laden** füllt nur das Formular.
+   **Nach Odoo schreiben** legt Telefon, Adresse und Bankland auf den
+   Kontakt. **Write to Jeeves** sendet die Odoo-Felder nach Jeeves.
+   Maskierte Kontonummern (`****3012`) überschreiben keine IBAN.
 4. Die Jeeves-Vendor-ID landet auf dem Kontakt. *Link ID only* schreibt
    nur die ID, ohne Jeeves zu ändern.
 5. Karten anlegen oder Rechnungen zahlen tut Odoo **nicht**.

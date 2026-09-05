@@ -1,6 +1,6 @@
 {
     "name": "Bank Statement Import: Jeeves CSV",
-    "version": "19.0.1.10.0",
+    "version": "19.0.1.11.0",
     "category": "Accounting",
     "summary": "Jeeves CSV/MCP pull, vendor sync, and bill matching",
     "author": "Expect Magic",

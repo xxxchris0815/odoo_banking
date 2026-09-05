@@ -24,7 +24,7 @@
                     <button
                         name="action_open_jeeves_vendor_wizard"
                         type="object"
-                        string="Create / update in Jeeves"
+                        string="Jeeves laden / nach Odoo"
                         class="btn-secondary"
                     />
                 </div>

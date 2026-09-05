@@ -535,7 +535,7 @@ class JeevesVendorWizard(models.TransientModel):
             "target": "new",
         }
 
-    def action_import_to_odoo(self):
+    def action_load_from_jeeves(self):
         self.ensure_one()
         vendor = self._fetch_jeeves_vendor()
         if not vendor:
@@ -550,11 +550,6 @@ class JeevesVendorWizard(models.TransientModel):
             raise UserError(
                 self.env._("Jeeves returned a vendor without contact details.")
             )
-        values["match_note"] = self.env._(
-            "Loaded from Jeeves. Review the fields, then keep them on the contact."
-        )
-        self.write(values)
-        imported = self._import_partner_from_wizard()
         contact = contact_from_vendor(vendor)
         missing = [
             label
@@ -567,15 +562,39 @@ class JeevesVendorWizard(models.TransientModel):
             )
             if not contact.get(key)
         ]
-        if missing:
-            self.missing_note = self.env._(
-                "Jeeves did not return: %s. Fill them in Odoo or in Jeeves.",
+        values["match_note"] = self.env._(
+            "Loaded from Jeeves into this form. Click “Nach Odoo schreiben” "
+            "to copy the fields onto the contact."
+        )
+        values["missing_note"] = (
+            self.env._(
+                "Jeeves did not return: %s. Fill them here, then write to Odoo.",
                 ", ".join(missing),
             )
-        else:
-            self.missing_note = False
-        self.match_note = self.env._(
-            "Imported from Jeeves onto the contact: %s.",
-            ", ".join(imported) or "vendor id",
+            if missing
+            else False
         )
+        self.write(values)
         return self._reload()
+
+    def action_write_to_odoo(self):
+        self.ensure_one()
+        imported = self._import_partner_from_wizard()
+        if not imported:
+            raise UserError(
+                self.env._(
+                    "Nothing to write. Load from Jeeves or fill phone / "
+                    "address first."
+                )
+            )
+        self.match_note = self.env._(
+            "Written to the Odoo contact: %s.",
+            ", ".join(imported),
+        )
+        self.missing_note = False
+        return self._reload()
+
+    def action_import_to_odoo(self):
+        """Back-compat: load from Jeeves, then write the form to the contact."""
+        self.action_load_from_jeeves()
+        return self.action_write_to_odoo()
