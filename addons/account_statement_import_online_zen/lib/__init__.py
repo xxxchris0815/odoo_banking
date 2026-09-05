@@ -15,6 +15,7 @@ from .zen_transactions import (  # noqa: F401
     requests_get_mtls,
     iter_settled_transactions,
     statement_lines_from_transactions,
+    unwrap_history_page,
     webhook_url,
     zen_query_dates,
 )

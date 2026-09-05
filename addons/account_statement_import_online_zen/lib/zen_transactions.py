@@ -18,7 +18,7 @@ from urllib.parse import urlencode, urljoin, urlparse
 ZEN_DEFAULT_API_BASE = "https://api-services.zen.com"
 ZEN_TEST_API_BASE = "https://api-services.zen-test.com"
 ACCOUNTS_PATH = "accounts/v1.0"
-HISTORY_PATH = "payments/v1.0/history"
+HISTORY_PATH = "payments/v1.0"
 PAYMENT_PATH = "payments/v1.0"
 WEBHOOK_PATH_PREFIX = "/zen/webhook"
 SETTLED_STATUS = "SETTLED"
@@ -137,6 +137,26 @@ def parse_webhook_events(payload: Any) -> list[dict[str, Any]]:
             "external_id": payload.get("externalId"),
         }
     ]
+
+
+def unwrap_history_page(payload: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Live history is ``[{data, meta}]``; the docs show a bare object."""
+    page = payload
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict) and ("data" in item or "meta" in item):
+                page = item
+                break
+        else:
+            rows = [item for item in payload if isinstance(item, dict) and item.get("id")]
+            return rows, {}
+    if not isinstance(page, dict):
+        return [], {}
+    rows = page.get("data") or []
+    if not isinstance(rows, list):
+        rows = []
+    meta = page.get("meta") if isinstance(page.get("meta"), dict) else {}
+    return rows, meta
 
 
 @dataclass(frozen=True)
@@ -534,7 +554,6 @@ class ZenClient:
         account_id: str | None = None,
     ) -> list[dict[str, Any]]:
         resolved_id = account_id or self.resolve_account_id()
-        start, end = zen_query_dates(date_since, date_until)
         collected: list[dict[str, Any]] = []
         last_entry_id = None
         while True:
@@ -542,19 +561,16 @@ class ZenClient:
                 HISTORY_PATH,
                 {
                     "accountId": resolved_id,
-                    "createdAtFrom": start,
-                    "createdAtTo": end,
-                    "bookedAtFrom": start,
-                    "bookedAtTo": end,
+                    "bookedAtFrom": _as_date(date_since),
+                    "bookedAtTo": _as_date(date_until),
                     "limit": self.page_limit,
                     "lastEntryId": last_entry_id,
                 },
             )
-            rows = payload.get("data") if isinstance(payload, dict) else payload
+            rows, meta = unwrap_history_page(payload)
             if not rows:
                 break
             collected.extend(rows)
-            meta = payload.get("meta") if isinstance(payload, dict) else {}
             if not meta.get("hasNext"):
                 break
             last_entry_id = meta.get("lastEntryId")

@@ -20,6 +20,7 @@ from account_statement_import_online_zen.lib.zen_transactions import (
     statement_line_from_transaction,
     statement_lines_from_transaction,
     statement_lines_from_transactions,
+    unwrap_history_page,
     webhook_url,
 )
 
@@ -133,8 +134,8 @@ def test_client_resolves_iban_and_paginates():
         if url.rstrip("/").endswith("accounts/v1.0"):
             return 200, accounts
         if "lastEntryId=" in url:
-            return 200, page2
-        return 200, page1
+            return 200, [page2]
+        return 200, [page1]
 
     client = ZenClient(
         "secret-key",
@@ -148,9 +149,10 @@ def test_client_resolves_iban_and_paginates():
     assert [line["amount"] for line in lines] == [150.50, -20.00]
     assert any("accountId=acc-zen-1" in url for url in calls)
     assert any("bookedAtFrom=2026-08-01" in url for url in calls)
-    assert any("createdAtFrom=2026-08-01" in url for url in calls)
-    assert any("bookedAtTo=2026-08-30" in url for url in calls)
+    assert any("bookedAtTo=2026-08-31" in url for url in calls)
+    assert not any("createdAtFrom=" in url for url in calls)
     assert any(f"/{HISTORY_PATH}?" in url for url in calls)
+    assert "/history" not in "".join(calls)
     assert client.api_base.startswith(ZEN_DEFAULT_API_BASE)
 
 
@@ -386,6 +388,40 @@ def test_client_loads_payment_details_from_array():
     assert extras == {}
     assert lines[0]["amount"] == 246.20
     assert any(LIVE_PAYMENT["id"] in url for url in calls)
+
+
+def test_live_history_is_wrapped_array_without_history_suffix():
+    envelope = [
+        {
+            "data": [LIVE_PAYMENT],
+            "meta": {
+                "lastEntryId": LIVE_PAYMENT["id"],
+                "hasNext": False,
+                "direction": "DESC",
+                "sortedBy": "createdAt",
+            },
+        }
+    ]
+    rows, meta = unwrap_history_page(envelope)
+    assert rows[0]["id"] == LIVE_PAYMENT["id"]
+    assert meta["hasNext"] is False
+
+    calls = []
+
+    def http_get(url, headers):
+        calls.append(url)
+        return 200, envelope
+
+    client = ZenClient("k", account_id=LIVE_WEBHOOK["accountId"], http_get=http_get)
+    lines, _extras = client.obtain_statement_lines(
+        datetime(2026, 9, 4), datetime(2026, 9, 5)
+    )
+    assert lines[0]["amount"] == 246.20
+    assert lines[0]["partner_name"] == "GOCARDLESS LTD"
+    assert "payments/v1.0?" in calls[0]
+    assert "payments/v1.0/history" not in calls[0]
+    assert "bookedAtFrom=2026-09-04" in calls[0]
+    assert "bookedAtTo=2026-09-05" in calls[0]
 
 
 def test_zen_query_dates_make_oca_until_inclusive_and_not_future():
