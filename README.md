@@ -229,9 +229,13 @@ Date, Merchant, Amount). Auch `;` und europäische Zahlen (`-120,00`).
 - `unique_import_id` = Unique ID / Transaction ID
 - Partner: gespeicherte Jeeves-Vendor-ID, sonst Vendor-E-Mail, sonst Payee-Name
 
-Datei im Journal-Dashboard über den normalen Statement-Import laden.
-n8n kann dieselbe Datei per JSON-RPC an `account.statement.import` schieben,
-soll die Zeilen aber nicht selbst umbauen.
+Zwei Wege, nicht parallel für denselben Zeitraum:
+
+- **MCP täglich:** Provider **Jeeves**, Account-ID + MCP-API-Key. Odoo ruft
+  `list_transaction` auf `https://mcp-prod.jeev.es/mcp` auf (wie der
+  n8n-MCP-Client). `unique_import_id` = Fingerprint, MCP schickt keine
+  Unique ID. n8n darf die Zeilen nicht zusätzlich buchen.
+- **CSV:** Journal-Dashboard → Import OCA. `unique_import_id` = Unique ID.
 
 ## Einrichtung
 

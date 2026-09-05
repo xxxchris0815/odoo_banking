@@ -172,12 +172,12 @@ Richtige Module (Apps, Filter *Apps* aus):
 
 | Anzeigename | Technischer Name | Version |
 | --- | --- | --- |
-| Community Banking Stack | `banking_community` | **19.0.1.8.0** |
+| Community Banking Stack | `banking_community` | **19.0.1.9.0** |
 | PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.7.0** |
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.6.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.13.0** |
 | Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.12.0** |
-| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.2.0** |
+| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.3.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -197,7 +197,7 @@ nicht nur mit `docker restart` laden — das ergibt 500
 cd /opt/odoo/extra-addons/odoo_banking
 git pull origin cursor/community-banking-stack-f606
 docker exec odoo_app /entrypoint.sh odoo \
-  -u account_statement_import_jeeves,account_statement_import_online_paypal_reporting,account_statement_import_online_stripe_reporting,account_statement_import_online_gocardless_payments,account_statement_import_online_zen \
+  -u account_statement_import_jeeves,banking_community,account_statement_import_online_paypal_reporting,account_statement_import_online_stripe_reporting,account_statement_import_online_gocardless_payments,account_statement_import_online_zen \
   -d db_odoo --stop-after-init --no-http
 docker restart odoo_app
 ```
@@ -420,8 +420,24 @@ den Eingang aus ihrem eigenen Auszug.
 
 ### 6d Jeeves
 
-Kein Online-Provider. Journal bleibt auf Datei-Import / undefiniert.
-Import kommt in Schritt 9.
+Zwei Wege, **einen** pro Zeitraum, nicht beide (sonst Duplikate):
+
+**A) Täglicher Pull über MCP** (wie n8n `list_transaction`)
+
+1. Journal *Jeeves Cash EUR* (bzw. USD), Bank Feeds = **Online (OCA)** →
+   Service **Jeeves**.
+2. **Account id** = dieselbe ID wie im n8n-Node.
+3. **MCP API key** = Key aus Jeeves *Settings → Product Settings*
+   (MCP Integration). Nicht in n8n-Notes committen.
+4. Speichern. **Pull Online Bank Statement** für ein paar Tage testen.
+5. Der OCA-Cron holt danach täglich. n8n darf diese Zeilen **nicht**
+   zusätzlich ins Journal schreiben.
+
+MCP liefert keine Unique ID. Odoo bildet `jeeves:mcp:{fingerprint}`
+aus Zeitpunkt, Betrag und Gegenpartei. Dieselbe Bewegung per CSV
+importieren erzeugt eine zweite Zeile.
+
+**B) Datei** — Schritt 9, Bank Feeds nicht auf Online. Import OCA.
 
 ---
 
@@ -652,6 +668,7 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 | Jede Zeile doppelt | n8n läuft noch parallel, oder einmal Datei **und** Online für denselben Feed |
 | Jeeves-Beträge positiv statt Aufwand | Live-Export hat immer Plusbeträge; das Vorzeichen steht in `Credit or Debit`. Modul **19.0.1.1.0** upgraden. Ältere Dateien: Spalte `Type` prüfen. |
 | Jeeves-CSV wird nicht erkannt | Live-Header ab 19.0.1.1.0. Datei muss `Unique ID` + `Posted At UTC` + `Amount (origin currency)` haben, oder die alten Spalten `Transaction ID` / `Posted Date` / `Amount`. |
+| Jeeves-MCP-Zeilen doppelt zur CSV | MCP-Fingerprint ≠ CSV-Unique-ID. Entweder täglicher Provider **oder** Import OCA für denselben Zeitraum. n8n nicht parallel ins Journal schreiben. |
 | GoCardless Redirect-Fehler | BAD-Consent abgelaufen oder neue Registrierung gesperrt → CAMT/Ponto |
 
 Keine Zeilen von Hand im Journal löschen, wenn die `unique_import_id`
