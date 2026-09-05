@@ -12,7 +12,7 @@
                 <group
                     name="stack_credentials"
                     string="Credentials"
-                    invisible="service == 'paypal' or service == 'zen' or service == 'gocardless_payments'"
+                    invisible="service == 'paypal' or service == 'stripe' or service == 'zen' or service == 'gocardless_payments'"
                 >
                     <group>
                         <field name="username" string="Client ID / Account UUID" />

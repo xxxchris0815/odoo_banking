@@ -34,20 +34,26 @@ Nichts in Git oder in n8n-Notes speichern. Nur ins Odoo-Provider-Formular.
    - [developer.paypal.com](https://developer.paypal.com) → Apps & Credentials → **Live**
    - App anlegen, **Client ID** und **Secret** kopieren
    - Scope: Transaction Search / Reporting (Business-Konto)
-2. **ZEN.COM**
+2. **Stripe**
+   - [dashboard.stripe.com](https://dashboard.stripe.com) → Entwickler → API-Keys
+   - Restricted Key (`rk_live_…`) mit Read auf Charges, Customers,
+     Balance Transactions. Oder der Secret Key (`sk_live_…`).
+   - Webhook-Secret (`whsec_…`) erst, nachdem die URL im Dashboard
+     angelegt ist (dieser Key braucht kein `webhook_write`)
+3. **ZEN.COM**
    - Bei ZEN einen **Transfers-API-Key** beantragen (nicht den Terminal-Key
      aus my.zen.com Payments)
    - Wallet-IBAN und Währung notieren
    - Optional: Account-UUID, falls du mehrere Wallets hast
-3. **GoCardless Payments**
+4. **GoCardless Payments**
    - Developers → Access Token (Live)
    - Webhook-Endpoint anlegen: `https://DEINE-ODOO/gocardless/payments/webhook`
    - Endpoint-Secret notieren
    - Events: payments (alle), payouts (paid, bounced), refunds
-4. **Jeeves**
+5. **Jeeves**
    - Eine aktuelle Activity-CSV exportieren (*Activity and Exports*)
    - Spalten prüfen: Transaction ID, Posted Date, Merchant, Amount, Status
-5. **Bank** (falls kein BAD)
+6. **Bank** (falls kein BAD)
    - Einen CAMT.053 oder CSV-Auszug der Hausbank bereitlegen
 
 ---
@@ -99,11 +105,13 @@ Einmalig, passend zu SKR03/SKR04 (Nummern sind Beispiele):
 | Geldtransit / interne Transfers | 1360 | 1460 | Umlaufvermögen, abstimmbar |
 | GoCardless Clearing | 1362 | 1462 | Umlaufvermögen, abstimmbar |
 | PayPal EUR | 1210 | 1810 | Bank / flüssige Mittel |
+| Stripe EUR | 1212 | 1812 | Bank / flüssige Mittel |
 | ZEN EUR | 1215 | 1815 | Bank / flüssige Mittel |
 | Hausbank | 1200 | 1800 | Bank |
 | Jeeves Credit | 1665 | 3610 | Verbindlichkeit |
 | Jeeves Cash (Prepaid) | 1218 | 1818 | Bank / flüssige Mittel |
 | PayPal-Gebühren | 4970 | 6855 | Aufwand |
+| Stripe-Gebühren | 4971 | 6855 | Aufwand |
 | ZEN-Gebühren / FX | 4972 | 6856 | Aufwand |
 
 Wichtig:
@@ -135,6 +143,7 @@ Vorschlag für die Codes (kurz, eindeutig):
 | Hausbank EUR | BANK | 1200 / 1800 |
 | GoCardless Clearing | GC | 1362 / 1462 |
 | PayPal EUR | PPAL | 1210 / 1810 |
+| Stripe EUR | STRP | 1212 / 1812 |
 | ZEN EUR | ZEN | 1215 / 1815 |
 | Jeeves Credit EUR | JCRD | 1665 / 3610 |
 | Jeeves Cash EUR | JCSH | 1218 / 1818 |
@@ -245,6 +254,26 @@ drei Tage nach (wie ein kurzer Pull).
 
 Auszahlungen nicht per n8n auf dieses Journal schreiben. Die Hausbank
 bekommt den Eingang aus ihrem eigenen Auszug; Abstimmung über Geldtransit.
+
+### 6e Stripe
+
+Provider **Stripe**. Restricted Key reicht (Read auf Balance
+Transactions, Charges, Customers). `webhook_write` ist nicht nötig.
+
+1. Journal *Stripe EUR*, Bank Feeds = **Online (OCA)** → Service **Stripe**.
+2. **API key** = `rk_live_…` oder `sk_live_…`. Speichern.
+3. **Webhook URL** kopieren (`https://DEINE-DOMAIN/stripe/webhook/<token>`).
+4. Stripe Dashboard → Entwickler → Webhooks → Add endpoint.
+   Genau diese HTTPS-URL. Events: `charge.succeeded`, `charge.refunded`,
+   `payout.paid`, `payment_intent.succeeded`.
+5. Signing secret (`whsec_…`) nach Odoo ins Feld **Webhook signing secret**.
+
+Mehrere Stripe-Accounts = mehrere Provider, jeder mit eigenem Token.
+Der Restricted Key kann den Hook nicht selbst anlegen (403) — nur
+manuell im Dashboard.
+
+Erwartung: `[paid] Kundenname — Produkt`, `[fee] Stripe — txn_…`,
+`[paid] Payout — po_…`. `unique_import_id` = `st:txn:…`.
 
 ### 6b ZEN.COM
 
@@ -385,6 +414,12 @@ Mindestens diese drei:
 - Gegenkonto: PayPal-Gebührenaufwand
 - Partner leer lassen
 
+### Stripe-Gebühr
+
+- Label enthält `fee` / `Stripe`
+- Gegenkonto: Stripe-Gebührenaufwand
+- Partner leer lassen
+
 ### Geldtransit (interne Transfers)
 
 - Betrag gleich, Gegenjournal das Zielkonto, Toleranz ±1 Tag
@@ -485,6 +520,7 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 - [ ] Jeeves Credit hängt am Verbindlichkeitskonto
 - [ ] Geldtransit-Konto ist abstimmbar
 - [ ] PayPal: 7-Tage-Pull ok, zweiter Pull ohne Duplikate
+- [ ] Stripe: 7-Tage-Pull ok, zweiter Pull ohne Duplikate
 - [ ] ZEN: nur SETTLED, IBAN/UUID stimmt, Vorzeichen richtig
 - [ ] GoCardless: Einzug sichtbar, Fail ändert dieselbe Zeile auf 0,
       Payout + Gebühr setzen Clearing auf 0
@@ -493,6 +529,7 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 - [ ] Bank: CAMT/CSV oder anderer Bankfeed, nicht GoCardless BAD
 - [ ] Jeeves: eine CSV, Pending weg, Re-Import ohne Duplikate
 - [ ] PayPal-Auszahlung erscheint auf PayPal **und** Bank und geht über Geldtransit
+- [ ] Stripe-Payout erscheint auf Stripe **und** Bank und geht über Geldtransit
 - [ ] Abstimmungmodell Gebühren und Transfers greifen
 - [ ] n8n schreibt keine Journalzeilen mehr
 

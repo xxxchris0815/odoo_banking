@@ -22,6 +22,7 @@ dieses Repo als dünne Provider auf demselben Framework.
 
 ```
 PayPal API          ──►  account_statement_import_online_paypal_reporting
+Stripe API          ──►  account_statement_import_online_stripe
 GoCardless Einzüge  ──►  account_statement_import_online_gocardless_payments
 ZEN.COM Transfers   ──►  account_statement_import_online_zen   (dieses Repo)
 Jeeves CSV          ──►  account_statement_import_jeeves       (dieses Repo)
@@ -76,6 +77,7 @@ Aus [OCA/bank-statement-import](https://github.com/OCA/bank-statement-import/tre
 Dieses Repo:
 
 - `account_statement_import_online_paypal_reporting`
+- `account_statement_import_online_stripe`
 - `account_statement_import_online_zen`
 - `account_statement_import_online_gocardless_payments`
 - `account_statement_import_jeeves`
@@ -118,6 +120,23 @@ PayPal-Accounts auf dieselbe Odoo-Instanz zeigen.
 
 Nur die letzten drei Jahre. Ältere Historie per PayPal-CSV und
 `account_statement_import_sheet_file`. Details: SETUP.md Schritt 6a.
+
+### Stripe — Balance Transactions (dieses Repo)
+
+Restricted Key (`rk_live_…`) oder Secret Key (`sk_live_…`) mit Leserecht
+auf Balance Transactions, Charges, Customers. Webhook-Endpoints-Write
+braucht der Key nicht — den Hook legst du manuell im Dashboard an.
+
+| Ereignis | Zeile | Partner |
+| --- | --- | --- |
+| Charge / Payment | `[paid] Kundenname — Produkt` | `billing_details.name` / Customer / E-Mail |
+| Stripe-Gebühr | `[fee] Stripe — txn_…` | Stripe |
+| Payout aufs Bankkonto | `[paid] Payout — po_…` | leer |
+| Erstattung | `[paid] Refund — …` | wenn Stripe einen Namen schickt |
+
+`unique_import_id` = `st:txn:{id}` bzw. `:fee`. Webhook pro Konto:
+`https://DEINE-DOMAIN/stripe/webhook/<token>` (immer HTTPS). Details:
+SETUP.md Schritt 6e.
 
 ### GoCardless Payments — Clearing-Journal (dieses Repo)
 

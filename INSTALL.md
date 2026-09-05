@@ -230,17 +230,19 @@ Ohne den Haken fehlen Journals, Provider und der Abstimmungsbildschirm.
 Fakturierung → Konfiguration:
 
 - *Online Bank Statement Providers* ist sichtbar
-- Beim Anlegen eines Providers erscheinen **PayPal**, **ZEN.COM**,
-  **GoCardless Payments**
+- Beim Anlegen eines Providers erscheinen **PayPal**, **Stripe**,
+  **ZEN.COM**, **GoCardless Payments**
 
 Webhooks von außen:
 
 ```
 https://DEINE-DOMAIN/gocardless/payments/webhook
 https://DEINE-DOMAIN/paypal/webhook/<token-des-providers>
+https://DEINE-DOMAIN/stripe/webhook/<token-des-providers>
 ```
 
-PayPal: jedes Konto hat eine eigene URL (Token steht im Provider-Formular).
+PayPal und Stripe: jedes Konto hat eine eigene URL (Token steht im
+Provider-Formular). Stripe-Hooks nur manuell im Dashboard anlegen.
 
 Die URL muss aus dem Internet erreichbar sein (Proxy, TLS, kein Basic-Auth
 vor dieser Route).

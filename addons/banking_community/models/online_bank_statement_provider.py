@@ -16,6 +16,8 @@ class OnlineBankStatementProvider(models.Model):
             seen.add(key)
             if key == "paypal":
                 services.append((key, "PayPal"))
+            elif key == "stripe":
+                services.append((key, "Stripe"))
             else:
                 services.append((key, label))
         return services
