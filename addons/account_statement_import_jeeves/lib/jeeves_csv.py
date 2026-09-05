@@ -113,6 +113,7 @@ COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "payment_description": ("payment description",),
     "invoice_number": ("invoice number",),
+    "invoice_id": ("invoice id",),
     "vendor_email": ("vendor email",),
     "vendor_id": ("vendor id",),
     "category": ("category",),
@@ -141,6 +142,10 @@ _LINE_EXTRA_KEYS = (
     "currency_code",
     "partner_email",
     "jeeves_vendor_id",
+    "invoice_number",
+    "jeeves_invoice_id",
+    "jeeves_payment_reference",
+    "jeeves_invoice_status",
 )
 
 
@@ -329,6 +334,7 @@ def parse_jeeves_csv(
         tx_id = _cell(row, mapping, "transaction_id") or f"jeeves-row-{index}"
         partner = _cell(row, mapping, "merchant")
         invoice_number = _cell(row, mapping, "invoice_number")
+        invoice_id = _cell(row, mapping, "invoice_id")
         memo = _cell(row, mapping, "notes")
         payment_description = _cell(row, mapping, "payment_description")
         category = _cell(row, mapping, "category")
@@ -373,6 +379,10 @@ def parse_jeeves_csv(
             line["partner_email"] = vendor_email
         if vendor_id:
             line["jeeves_vendor_id"] = vendor_id
+        if invoice_number:
+            line["invoice_number"] = invoice_number
+        if invoice_id:
+            line["jeeves_invoice_id"] = invoice_id
         lines.append(line)
     return lines
 

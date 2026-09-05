@@ -15,3 +15,7 @@ from .jeeves_vendors import (  # noqa: F401
     JeevesVendorDraft,
     unwrap_mcp_vendors,
 )
+from .jeeves_invoices import (  # noqa: F401
+    detect_jeeves_bulk_payments_csv,
+    unwrap_mcp_invoices,
+)

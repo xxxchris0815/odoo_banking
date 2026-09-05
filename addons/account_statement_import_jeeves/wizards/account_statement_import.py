@@ -11,6 +11,7 @@ from ..lib.jeeves_csv import (
     parse_jeeves_csv,
     statement_from_rows,
 )
+from ..lib.jeeves_invoices import detect_jeeves_bulk_payments_csv
 
 _logger = logging.getLogger(__name__)
 
@@ -19,6 +20,16 @@ class AccountStatementImport(models.TransientModel):
     _inherit = "account.statement.import"
 
     def _parse_file(self, data_file):
+        if detect_jeeves_bulk_payments_csv(data_file):
+            raise UserError(
+                self.env._(
+                    "This file is a Jeeves Bulk Payments template, not a bank "
+                    "statement. Pay it in the Jeeves web app, or create it from "
+                    "vendor bills via Action → Export Jeeves bulk payments. "
+                    "Import Activity and Exports (or use the daily MCP pull) "
+                    "for cash lines."
+                )
+            )
         if detect_jeeves_csv(data_file):
             try:
                 lines = parse_jeeves_csv(data_file)
@@ -26,6 +37,8 @@ class AccountStatementImport(models.TransientModel):
                 raise UserError(str(error)) from error
             lines = self._jeeves_filter_currency(lines)
             self._jeeves_assign_partners(lines)
+            for line in lines:
+                self.env["account.move"]._jeeves_apply_statement_line(line)
             currency, account_number, statements = statement_from_rows(lines)
             if not statements or not statements[0].get("transactions"):
                 raise UserError(

@@ -230,6 +230,9 @@ Date, Merchant, Amount). Auch `;` und europäische Zahlen (`-120,00`).
 - Partner: gespeicherte Jeeves-Vendor-ID, sonst Vendor-E-Mail, sonst Payee-Name
 - Lieferanten: Button *Jeeves* am Kontakt ruft `list_vendors` /
   `create_vendor` / `update_vendor` (nicht `create_card`)
+- Rechnungen: MCP-`list_billpay_invoices` matcht Auszugszeilen auf
+  `BILL/…` / `PROV…`. Aktion *Export Jeeves bulk payments* erzeugt die
+  Jeeves-Bulk-CSV (nicht `file_upload`, das sind nur Spesen-PDFs)
 
 Zwei Wege, nicht parallel für denselben Zeitraum:
 

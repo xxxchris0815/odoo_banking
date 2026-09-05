@@ -134,6 +134,8 @@ def test_live_cash_eur_maps_bills_deposits_and_vendor_ids():
     assert bill["payment_ref"] == "naturrauch — RE4583"
     assert bill["partner_email"] == "info@naturrauch.de"
     assert bill["jeeves_vendor_id"] == "55ee019e-510e-4f3c-8158-6411f9369d49"
+    assert bill["invoice_number"] == "RE4583"
+    assert bill["jeeves_invoice_id"] == "3d9bee97-37b4-401e-bb82-712d304e7aa5"
     assert "vendor=55ee019e-510e-4f3c-8158-6411f9369d49" in bill["narration"]
     sophia = by_id["a74b9885-42df-4c25-9fd4-da8d72ef6684"]
     assert sophia["amount"] == -135.00
@@ -145,6 +147,8 @@ def test_live_cash_eur_maps_bills_deposits_and_vendor_ids():
     assert currency == "EUR"
     assert "jeeves_vendor_id" not in statements[0]["transactions"][3]
     assert "partner_email" not in statements[0]["transactions"][3]
+    assert "invoice_number" not in statements[0]["transactions"][3]
+    assert "jeeves_invoice_id" not in statements[0]["transactions"][3]
 
 
 def test_bill_payment_without_credit_column_is_still_an_outflow():

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_move_form_jeeves_invoice" model="ir.ui.view">
+        <field name="name">account.move.form.jeeves.invoice</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button
+                    name="action_jeeves_sync_invoices"
+                    type="object"
+                    string="Sync Jeeves invoice"
+                    class="btn-secondary"
+                    invisible="move_type not in ('in_invoice', 'in_refund')"
+                />
+                <button
+                    name="action_jeeves_export_bulk_csv"
+                    type="object"
+                    string="Export Jeeves bulk CSV"
+                    class="btn-secondary"
+                    invisible="move_type != 'in_invoice'"
+                />
+            </xpath>
+            <xpath expr="//field[@name='ref']" position="after">
+                <field
+                    name="jeeves_invoice_id"
+                    invisible="move_type not in ('in_invoice', 'in_refund')"
+                />
+                <field
+                    name="jeeves_payment_reference"
+                    invisible="move_type not in ('in_invoice', 'in_refund')"
+                />
+                <field
+                    name="jeeves_invoice_status"
+                    invisible="move_type not in ('in_invoice', 'in_refund')"
+                />
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_jeeves_sync_invoices_server" model="ir.actions.server">
+        <field name="name">Sync Jeeves invoices</field>
+        <field name="model_id" ref="account.model_account_move"/>
+        <field name="binding_model_id" ref="account.model_account_move"/>
+        <field name="binding_view_types">list,form</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_jeeves_sync_invoices()</field>
+    </record>
+
+    <record id="action_jeeves_export_bulk_csv_server" model="ir.actions.server">
+        <field name="name">Export Jeeves bulk payments</field>
+        <field name="model_id" ref="account.model_account_move"/>
+        <field name="binding_model_id" ref="account.model_account_move"/>
+        <field name="binding_view_types">list,form</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_jeeves_export_bulk_csv()</field>
+    </record>
+</odoo>

@@ -1,8 +1,8 @@
 {
     "name": "Bank Statement Import: Jeeves CSV",
-    "version": "19.0.1.5.0",
+    "version": "19.0.1.6.0",
     "category": "Accounting",
-    "summary": "Jeeves CSV import, daily MCP pull, and vendor create/update",
+    "summary": "Jeeves CSV/MCP pull, vendor sync, and bill matching",
     "author": "Expect Magic",
     "website": "https://github.com/xxxchris0815/odoo_banking",
     "license": "AGPL-3",
@@ -13,6 +13,7 @@
     "data": [
         "security/ir.model.access.csv",
         "views/res_partner.xml",
+        "views/account_move.xml",
         "views/online_bank_statement_provider.xml",
         "wizards/jeeves_vendor_wizard_views.xml",
     ],

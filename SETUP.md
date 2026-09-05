@@ -177,7 +177,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.6.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.13.0** |
 | Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.12.0** |
-| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.5.0** |
+| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.6.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -433,8 +433,23 @@ Zwei Wege, **einen** pro Zeitraum, nicht beide (sonst Duplikate):
    zur Journal-Währung.
 4. Speichern. **Pull Online Bank Statement** für ein paar Tage testen.
 5. Der OCA-Cron holt danach täglich. n8n darf diese Zeilen **nicht**
-   zusätzlich ins Journal schreiben. Für Auszüge ruft Odoo nur
-   `list_accounts` / `list_transactions`.
+   zusätzlich ins Journal schreiben. Für Auszüge: `list_accounts` /
+   `list_transactions`. Zum Rechnungsabgleich zusätzlich
+   `list_billpay_invoices`.
+
+**Rechnungen ↔ Jeeves-Zahlungen**
+
+- MCP-Pull und Activity-CSV hängen die Odoo-Belegnummer an die
+  Auszugszeile (`BILL/…`, `PROV…`, `RE4583`), wenn Betrag + Lieferant
+  zu einer Jeeves-Bill-Pay-Rechnung passen.
+- Auf der Lieferantenrechnung: *Sync Jeeves invoice* schreibt
+  `jeeves_invoice_id`, Status und `JPP…`.
+- Zahlen aus Odoo: offene Rechnungen markieren → Aktion
+  **Export Jeeves bulk payments**. Das ist dieselbe Vorlage wie in der
+  Jeeves-Web-UI (*Bulk Payments*), kein Kontoauszug und nicht
+  `file_upload`.
+- `file_upload` ist nur für Spesenbelege (PDF/JPEG/PNG/GIF, 10 MB) und
+  eine `uploadId` für `add_reimbursement`. Odoo ruft das nicht auf.
 
 **Lieferanten in Jeeves** (am Kontakt, Button *Jeeves* / *Create / update
 in Jeeves*):

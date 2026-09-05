@@ -159,7 +159,14 @@ def test_client_initialize_then_list_transactions():
         import json as _json
 
         body = _json.loads(payload)
-        assert body["params"]["name"] == "list_transactions"
+        name = body["params"]["name"]
+        if name == "list_billpay_invoices":
+            return (
+                200,
+                {"Content-Type": "application/json"},
+                '{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\\"count\\":0,\\"data\\":[],\\"totalCount\\":0}"}]}}',
+            )
+        assert name == "list_transactions"
         args = body["params"]["arguments"]
         assert args["startDate"] == "2026-08-31T00:00:00Z"
         assert args["endDate"] == "2026-09-03T23:59:59Z"
@@ -241,6 +248,10 @@ def test_client_paginates_and_resolves_account_from_list_accounts():
         if name == "list_accounts":
             return 200, {"Content-Type": "application/json"}, _json.dumps(
                 {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": ACCOUNTS_TEXT}]}}
+            )
+        if name == "list_billpay_invoices":
+            return 200, {"Content-Type": "application/json"}, _json.dumps(
+                {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": '{"count":0,"data":[],"totalCount":0}'}]}}
             )
         assert name == "list_transactions"
         page = body["params"]["arguments"]["page"]

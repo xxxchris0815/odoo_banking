@@ -90,9 +90,14 @@ class OnlineBankStatementProviderJeeves(models.Model):
                     currency,
                 )
                 continue
+            self.env["account.move"]._jeeves_apply_statement_line(line)
             self._jeeves_assign_partner_line(line)
             line.pop("partner_email", None)
             line.pop("jeeves_vendor_id", None)
+            line.pop("invoice_number", None)
+            line.pop("jeeves_invoice_id", None)
+            line.pop("jeeves_payment_reference", None)
+            line.pop("jeeves_invoice_status", None)
             filtered.append(line)
         return filtered, extras
 

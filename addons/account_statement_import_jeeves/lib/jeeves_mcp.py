@@ -26,9 +26,12 @@ JEEVES_MCP_URL = "https://mcp-prod.jeev.es/mcp"
 LIST_TRANSACTIONS_TOOL = "list_transactions"
 LIST_ACCOUNTS_TOOL = "list_accounts"
 LIST_VENDORS_TOOL = "list_vendors"
+LIST_BILLPAY_INVOICES_TOOL = "list_billpay_invoices"
 CREATE_VENDOR_TOOL = "create_vendor"
 UPDATE_VENDOR_TOOL = "update_vendor"
-READ_ONLY_TOOLS = frozenset({LIST_TRANSACTIONS_TOOL, LIST_ACCOUNTS_TOOL})
+READ_ONLY_TOOLS = frozenset(
+    {LIST_TRANSACTIONS_TOOL, LIST_ACCOUNTS_TOOL, LIST_BILLPAY_INVOICES_TOOL}
+)
 VENDOR_TOOLS = frozenset({LIST_VENDORS_TOOL, CREATE_VENDOR_TOOL, UPDATE_VENDOR_TOOL})
 ALLOWED_TOOLS = READ_ONLY_TOOLS | VENDOR_TOOLS
 MCP_PROTOCOL_VERSION = "2025-03-26"
@@ -568,7 +571,7 @@ class JeevesMCPClient:
                 "params": {
                     "protocolVersion": MCP_PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "odoo-jeeves", "version": "19.0.1.5"},
+                    "clientInfo": {"name": "odoo-jeeves", "version": "19.0.1.6"},
                 },
             }
         )
@@ -649,7 +652,52 @@ class JeevesMCPClient:
         date_until: datetime | date,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         rows = self.list_transactions(date_since, date_until)
-        return statement_lines_from_mcp_transactions(rows), {}
+        try:
+            invoices = self.list_billpay_invoices()
+        except JeevesMCPError:
+            invoices = []
+        from .jeeves_invoices import enrich_statement_line_with_invoice
+
+        lines: list[dict[str, Any]] = []
+        for transaction in rows:
+            built = statement_lines_from_mcp_transactions([transaction])
+            if not built:
+                continue
+            line = built[0]
+            if invoices:
+                enrich_statement_line_with_invoice(line, transaction, invoices)
+            lines.append(line)
+        return lines, {}
+
+    def list_billpay_invoices(
+        self,
+        *,
+        status: str | None = None,
+        page_size: int = 50,
+    ) -> list[dict[str, Any]]:
+        from .jeeves_invoices import unwrap_mcp_invoices
+
+        collected: list[dict[str, Any]] = []
+        page = 1
+        total = None
+        while True:
+            arguments: dict[str, Any] = {"page": page, "pageSize": page_size}
+            if status:
+                arguments["status"] = status
+            rows, reported = unwrap_mcp_invoices(
+                self.call_tool(LIST_BILLPAY_INVOICES_TOOL, arguments)
+            )
+            collected.extend(rows)
+            if total is None:
+                total = reported
+            if total is not None and len(collected) >= total:
+                break
+            if len(rows) < page_size:
+                break
+            page += 1
+            if page > 100:
+                raise JeevesMCPError("Jeeves MCP list_billpay_invoices exceeded 100 pages")
+        return collected
 
     def list_vendors(
         self,
