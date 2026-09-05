@@ -4,6 +4,7 @@ from account_statement_import_jeeves.lib.jeeves_mcp import (
     JeevesMCPClient,
     JeevesMCPConfigError,
     parse_mcp_http_body,
+    unwrap_mcp_json_value,
 )
 from account_statement_import_jeeves.lib.jeeves_vendors import (
     JeevesVendorDraft,
@@ -24,6 +25,7 @@ from account_statement_import_jeeves.lib.jeeves_vendors import (
     parse_partner_email,
     partner_phone,
     match_vendor,
+    account_last4,
     sanitize_iban,
     usable_account_number,
     split_personal_name,
@@ -272,7 +274,57 @@ def test_partner_phone_skips_missing_mobile_field():
     assert partner_phone(empty) == ""
 
 
-def test_find_vendor_prefers_get_vendor_then_list():
+LIVE_LIST_VENDORS = [
+    {
+        "content": [
+            {
+                "type": "text",
+                "text": {
+                    "count": 1,
+                    "data": [
+                        {
+                            "id": "98801079-03b5-4359-bc86-b1607ea94836",
+                            "vendorName": "Rapid Scaling Company LLC",
+                            "companyName": "Rapid Scaling Company LLC",
+                            "emailAddress": "info@wachstumsakademie-maximus.de",
+                            "entityType": "COMPANY",
+                            "vendorPaymentDetails": [
+                                {
+                                    "accountNumber": "****8339",
+                                    "bankCountryCode": "LTU",
+                                    "bankCurrencyCode": "EUR",
+                                    "paymentMethod": "SEPA",
+                                }
+                            ],
+                            "status": "active",
+                        }
+                    ],
+                    "totalCount": 63,
+                },
+            }
+        ]
+    }
+]
+
+
+def test_unwraps_live_list_vendors_object_text():
+    rows, total = unwrap_mcp_vendors(LIVE_LIST_VENDORS)
+    assert len(rows) == 1
+    assert rows[0]["id"] == "98801079-03b5-4359-bc86-b1607ea94836"
+    assert total == 63
+    parsed = unwrap_mcp_json_value(LIVE_LIST_VENDORS)
+    assert parsed["count"] == 1
+    contact = contact_from_vendor(rows[0])
+    assert contact["email"] == "info@wachstumsakademie-maximus.de"
+    assert contact["bank_iso3"] == "LTU"
+    assert contact["phone"] == ""
+    assert contact["street"] == ""
+    assert contact["iban"] == ""
+    assert contact["account_last4"] == "8339"
+    assert account_last4("LT203130010176158339") == "8339"
+
+
+def test_find_vendor_uses_list_vendors_not_get_vendor():
     calls = []
 
     def http_request(method, url, headers, data):
@@ -284,41 +336,18 @@ def test_find_vendor_prefers_get_vendor_then_list():
             return 202, {}, ""
         body = json.loads(payload)
         name = body["params"]["name"]
-        if name == "get_vendor":
+        if name == "list_vendors":
+            assert "selectedFields" not in body["params"]["arguments"]
             return 200, {"Content-Type": "application/json"}, json.dumps(
-                {
-                    "jsonrpc": "2.0",
-                    "id": 2,
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": json.dumps(
-                                    {
-                                        "id": "98801079-03b5-4359-bc86-b1607ea94836",
-                                        "emailAddress": "info@wachstumsakademie.de",
-                                        "phoneNumber": "+49 15146575973",
-                                        "streetAddress": "Hauptstrasse 1",
-                                        "city": "Berlin",
-                                        "postcode": "10115",
-                                        "countryCode": "DEU",
-                                        "vendorPaymentDetails": [
-                                            {"bankCountryCode": "LTU", "bankCurrencyCode": "EUR"}
-                                        ],
-                                    }
-                                ),
-                            }
-                        ]
-                    },
-                }
+                {"jsonrpc": "2.0", "id": 2, "result": LIVE_LIST_VENDORS[0]}
             )
         raise AssertionError(name)
 
     client = JeevesMCPClient("key", http_request=http_request)
     found = client.find_vendor(vendor_id="98801079-03b5-4359-bc86-b1607ea94836")
-    assert found["phoneNumber"] == "+49 15146575973"
+    assert found["emailAddress"] == "info@wachstumsakademie-maximus.de"
     assert found["vendorPaymentDetails"][0]["bankCountryCode"] == "LTU"
-    assert any("get_vendor" in payload for payload in calls)
+    assert all("get_vendor" not in payload for payload in calls)
 
 
 def test_still_refuses_card_and_payment_tools():

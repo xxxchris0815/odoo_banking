@@ -228,9 +228,10 @@ Date, Merchant, Amount). Auch `;` und europäische Zahlen (`-120,00`).
 - Ältere Karten-CSVs ohne diese Spalte invertieren Purchases weiterhin
 - `unique_import_id` = Unique ID / Transaction ID
 - Partner: gespeicherte Jeeves-Vendor-ID, sonst Vendor-E-Mail, sonst Payee-Name
-- Lieferanten: Button *Jeeves* am Kontakt. *Von Jeeves laden* füllt
-  das Formular, *Nach Odoo schreiben* legt die Felder auf den Kontakt,
-  *Write to Jeeves* sendet Odoo nach Jeeves.
+- Lieferanten: Button *Jeeves* am Kontakt. MCP-Lesen nur `list_vendors`
+  (kein `get_vendor`): Name, E-Mail, Bankland, maskierte IBAN.
+  Telefon/Adresse stehen nicht in dem Tool. *Von Jeeves laden* /
+  *Nach Odoo schreiben* / *Write to Jeeves*.
 - Rechnungen: MCP-`list_billpay_invoices` matcht Auszugszeilen auf
   `BILL/…` / `PROV…`. In der Lieferantenrechnungsliste 1–n markieren →
   *Jeeves Bulk-CSV herunterladen* (Jeeves-Web-Vorlage, nicht

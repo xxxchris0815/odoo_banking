@@ -49,6 +49,7 @@
                         </group>
                         <group>
                             <field name="iban"/>
+                            <field name="account_last4" invisible="1"/>
                             <field name="account_number"/>
                             <field name="account_name"/>
                             <field name="swift"/>

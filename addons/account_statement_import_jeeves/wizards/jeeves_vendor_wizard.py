@@ -54,6 +54,7 @@ class JeevesVendorWizard(models.TransientModel):
     currency_id = fields.Many2one("res.currency", required=True)
     payment_method = fields.Selection(PAYMENT_METHODS, required=True, default="SEPA")
     iban = fields.Char(string="IBAN")
+    account_last4 = fields.Char()
     account_number = fields.Char()
     account_name = fields.Char()
     swift = fields.Char(string="SWIFT / BIC")
@@ -171,6 +172,8 @@ class JeevesVendorWizard(models.TransientModel):
             values["payment_method"] = contact["payment_method"]
         if contact.get("iban"):
             values["iban"] = contact["iban"]
+        if contact.get("account_last4"):
+            values["account_last4"] = contact["account_last4"]
         if contact.get("account_name"):
             values["account_name"] = contact["account_name"]
         if contact.get("swift"):
@@ -235,8 +238,8 @@ class JeevesVendorWizard(models.TransientModel):
                 values["match_note"] = note
             elif vendor_id:
                 values["match_note"] = self.env._(
-                    "Found in Jeeves as %s. Use “Von Jeeves nach Odoo” "
-                    "to copy phone, address and bank country onto the contact.",
+                    "Found in Jeeves as %s. Use “Von Jeeves laden”, then "
+                    "“Nach Odoo schreiben”.",
                     vendor_id,
                 )
             values["missing_note"] = self._missing_note(values)
@@ -272,8 +275,8 @@ class JeevesVendorWizard(models.TransientModel):
             )
         return (
             self.env._(
-                "Already in Jeeves as %(name)s. “Von Jeeves nach Odoo” "
-                "imports this vendor onto the contact.",
+                "Already in Jeeves as %(name)s. Load from Jeeves, then "
+                "write to Odoo.",
                 name=found.get("vendorName") or name,
             ),
             vendor_id,
@@ -433,7 +436,14 @@ class JeevesVendorWizard(models.TransientModel):
         iban = sanitize_iban(self.iban)
         if "*" in iban:
             iban = ""
+        last4 = (self.account_last4 or "").strip()
         bank = partner.bank_ids[:1]
+        if last4:
+            same_tail = partner.bank_ids.filtered(
+                lambda rec: sanitize_iban(rec.acc_number).endswith(last4)
+            )
+            if same_tail:
+                bank = same_tail[:1]
         if iban:
             same = partner.bank_ids.filtered(
                 lambda rec: sanitize_iban(rec.acc_number) == iban
@@ -563,12 +573,13 @@ class JeevesVendorWizard(models.TransientModel):
             if not contact.get(key)
         ]
         values["match_note"] = self.env._(
-            "Loaded from Jeeves into this form. Click “Nach Odoo schreiben” "
-            "to copy the fields onto the contact."
+            "list_vendors returned e-mail, name and bank country. "
+            "Phone and street are not in this MCP tool. "
+            "Click “Nach Odoo schreiben” to copy what Jeeves did send."
         )
         values["missing_note"] = (
             self.env._(
-                "Jeeves did not return: %s. Fill them here, then write to Odoo.",
+                "Not in list_vendors (only in the Jeeves web UI): %s.",
                 ", ".join(missing),
             )
             if missing

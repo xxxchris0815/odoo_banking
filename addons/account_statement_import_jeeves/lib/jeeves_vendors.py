@@ -219,6 +219,11 @@ def usable_account_number(value: str | None) -> str:
     return cleaned
 
 
+def account_last4(value: str | None) -> str:
+    digits = re.sub(r"\D", "", value or "")
+    return digits[-4:] if len(digits) >= 4 else ""
+
+
 ISO3_TO_ISO2 = {iso3: iso2 for iso2, iso3 in ISO2_TO_ISO3.items()}
 EMAIL_ANGLE_RE = re.compile(r"<([^<>\s]+@[^<>\s]+)>")
 EMAIL_PLAIN_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -344,6 +349,9 @@ def contact_from_vendor(vendor: dict[str, Any] | None) -> dict[str, str]:
         ).strip(),
         "payment_method": str(payout.get("paymentMethod") or "").strip(),
         "iban": iban,
+        "account_last4": account_last4(
+            payout.get("accountNumber") or payout.get("iban") or vendor.get("iban")
+        ),
         "account_name": str(payout.get("accountName") or "").strip(),
         "swift": str(payout.get("swiftCode") or payout.get("swift") or "").strip(),
         "bank_name": str(payout.get("bankName") or "").strip(),

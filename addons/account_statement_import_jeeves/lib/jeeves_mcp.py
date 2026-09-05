@@ -231,30 +231,72 @@ def extract_total_records(text: str) -> int | None:
     return int(match.group(1))
 
 
+def _parse_mcp_text_block(text: Any) -> Any:
+    """Live Jeeves often puts a JSON object in ``content[].text``, not a string."""
+    if isinstance(text, (dict, list)):
+        return text
+    if not isinstance(text, str):
+        return None
+    blob = text.strip()
+    if not blob:
+        return None
+    try:
+        return json.loads(blob)
+    except json.JSONDecodeError:
+        starts = [index for index in (blob.find("{"), blob.find("[")) if index >= 0]
+        if not starts:
+            return None
+        try:
+            return json.loads(blob[min(starts) :])
+        except json.JSONDecodeError:
+            return None
+
+
 def unwrap_mcp_json_value(payload: Any) -> Any:
     """Parse the JSON object/array hidden in MCP ``content[].text``."""
-    for text in iter_mcp_text(payload):
-        blob = str(text).strip()
-        if not blob:
-            continue
-        try:
-            return json.loads(blob)
-        except json.JSONDecodeError:
-            starts = [index for index in (blob.find("{"), blob.find("[")) if index >= 0]
-            if not starts:
-                continue
-            try:
-                return json.loads(blob[min(starts) :])
-            except json.JSONDecodeError:
-                continue
+    if isinstance(payload, list):
+        if (
+            payload
+            and all(isinstance(item, dict) for item in payload)
+            and all("content" not in item for item in payload)
+            and any(
+                item.get("emailAddress")
+                or item.get("vendorName")
+                or item.get("invoiceId")
+                or item.get("transactionType")
+                for item in payload
+            )
+        ):
+            return payload
+        for item in payload:
+            found = unwrap_mcp_json_value(item)
+            if found is not None:
+                return found
+        return None
     if isinstance(payload, dict):
+        if isinstance(payload.get("data"), list) and (
+            "count" in payload or "totalCount" in payload or "vendors" in payload
+        ):
+            return payload
+        content = payload.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                parsed = _parse_mcp_text_block(block.get("text"))
+                if parsed is not None:
+                    return parsed
+        result = payload.get("result")
+        if result is not None and result is not payload:
+            found = unwrap_mcp_json_value(result)
+            if found is not None:
+                return found
         if "data" in payload or "vendorCacheId" in payload or "vendorId" in payload:
             return payload
-        result = payload.get("result")
-        if isinstance(result, dict) and result.get("content") is None:
-            return result
-    if isinstance(payload, list):
-        return payload
+    for text in iter_mcp_text(payload):
+        parsed = _parse_mcp_text_block(text)
+        if parsed is not None:
+            return parsed
     return None
 
 
@@ -282,8 +324,10 @@ def iter_mcp_text(payload: Any) -> list[str]:
     content = payload.get("content")
     if isinstance(content, list):
         for block in content:
-            if isinstance(block, dict) and block.get("text") is not None:
-                texts.append(str(block.get("text") or ""))
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                texts.append(block.get("text") or "")
+            elif isinstance(block, dict) and isinstance(block.get("text"), (dict, list)):
+                texts.append(json.dumps(block.get("text")))
             else:
                 texts.extend(iter_mcp_text(block))
     text = payload.get("text")
@@ -712,23 +756,18 @@ class JeevesMCPClient:
         page_size: int = 20,
         selected_fields: dict[str, bool] | None = None,
     ) -> list[dict[str, Any]]:
-        from .jeeves_vendors import SELECTED_VENDOR_FIELDS, unwrap_mcp_vendors
+        from .jeeves_vendors import unwrap_mcp_vendors
 
         collected: list[dict[str, Any]] = []
         page = 1
         total = None
-        fields = (
-            selected_fields
-            if selected_fields is not None
-            else dict(SELECTED_VENDOR_FIELDS)
-        )
-        use_fields = bool(fields)
+        use_fields = bool(selected_fields)
         while True:
             arguments: dict[str, Any] = {"page": page, "pageSize": page_size}
             if search:
                 arguments["searchQuery"] = search
             if use_fields:
-                arguments["selectedFields"] = fields
+                arguments["selectedFields"] = selected_fields
             try:
                 rows, reported = unwrap_mcp_vendors(
                     self.call_tool(LIST_VENDORS_TOOL, arguments)
@@ -739,6 +778,9 @@ class JeevesMCPClient:
                     continue
                 raise
             collected.extend(rows)
+            # searchQuery: totalCount is the whole book, not this search.
+            if search:
+                break
             if total is None:
                 total = reported
             if total is not None and len(collected) >= total:
@@ -783,9 +825,6 @@ class JeevesMCPClient:
         email = (email or "").strip()
         name = (name or "").strip()
         if vendor_id:
-            found = self.get_vendor(vendor_id)
-            if found:
-                return found
             found = match_vendor(self.list_vendors(vendor_id), vendor_id=vendor_id)
             if found:
                 return found
