@@ -177,6 +177,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.5.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.13.0** |
 | Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.11.0** |
+| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.1.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -456,12 +457,22 @@ Erst danach das nächste Journal (ZEN, dann Bank).
 
 ## Schritt 9 — Jeeves-CSV importieren
 
-1. In Jeeves: Activity and Exports → Konto + Zeitraum → CSV.
+1. In Jeeves: Activity and Exports → **ein Konto** (EUR oder USD) +
+   Zeitraum → CSV. Live-Header: `Unique ID`, `Posted At UTC`,
+   `Credit or Debit`, `Amount (origin currency)`, `Payee`, `Vendor Email`.
 2. Pending-Zeilen dürfen in der Datei bleiben, der Parser wirft sie weg.
-3. In Odoo: Journal *Jeeves Credit* bzw. *Jeeves Cash* → Auszug importieren.
+3. In Odoo: Journal *Jeeves Cash EUR* bzw. *Jeeves Cash USD* → Auszug
+   importieren. Die Datei-Währung muss zum Journal passen.
 4. Dieselbe Datei nicht in ein anderes Journal laden.
 5. Dieselbe Datei ein zweites Mal importieren: keine neuen Zeilen
-   (gleiche Transaction ID).
+   (`Unique ID`).
+
+Partner: zuerst gespeicherte Jeeves-Vendor-ID am Kontakt, sonst
+eindeutige Vendor-E-Mail, sonst eindeutiger Payee-Name. Nach dem ersten
+E-Mail-Treffer schreibt Odoo die Vendor-ID. IDs nicht von Hand pflegen.
+
+Label: `Payee — Rechnungsnummer/Memo` (ohne `[paid]`). Einzahlungen ohne
+Payee nutzen die Payment Description (`STRIPE`, `INV/2026/00036`).
 
 Wenn Odoo die Datei nicht als Jeeves erkennt (ungewöhnliche Header):
 
@@ -628,7 +639,8 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 | ZEN-Zeile ohne Partner | IBAN unter *Kontakte → Bankkonten*, oder eindeutiger Name (dann speichert Odoo die IBAN). PayPal/Stripe: gespeicherte Account-/Kunden-ID oder eindeutige E-Mail. |
 | ZEN pull leer | Nur IN_PROGRESS im Zeitraum, oder falsche Account-UUID/IBAN |
 | Jede Zeile doppelt | n8n läuft noch parallel, oder einmal Datei **und** Online für denselben Feed |
-| Jeeves-Beträge positiv statt Aufwand | Datei hat bereits Minusbeträge und wurde zusätzlich invertiert — CSV-Header `Type` prüfen oder eine Zeile zum Nachstellen schicken |
+| Jeeves-Beträge positiv statt Aufwand | Live-Export hat immer Plusbeträge; das Vorzeichen steht in `Credit or Debit`. Modul **19.0.1.1.0** upgraden. Ältere Dateien: Spalte `Type` prüfen. |
+| Jeeves-CSV wird nicht erkannt | Live-Header ab 19.0.1.1.0. Datei muss `Unique ID` + `Posted At UTC` + `Amount (origin currency)` haben, oder die alten Spalten `Transaction ID` / `Posted Date` / `Amount`. |
 | GoCardless Redirect-Fehler | BAD-Consent abgelaufen oder neue Registrierung gesperrt → CAMT/Ponto |
 
 Keine Zeilen von Hand im Journal löschen, wenn die `unique_import_id`

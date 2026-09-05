@@ -218,13 +218,16 @@ Ohne Transfers-API-Zugang: monatlichen CSV-Kontoauszug aus der ZEN-App
 Keine öffentliche Bank-Feed-API. Export aus *Activity and Exports* oder der
 Kreditkartenabrechnung.
 
-Der Parser erkennt typische Header (Transaction ID, Posted Date, Merchant,
-Amount, Status, …), auch `;` und europäische Zahlen (`-120,00`).
+Der Parser erkennt den Live-Export aus *Activity and Exports*
+(`Unique ID`, `Posted At UTC`, `Credit or Debit`, `Payee`,
+`Amount (origin currency)`) und ältere Header (Transaction ID, Posted
+Date, Merchant, Amount). Auch `;` und europäische Zahlen (`-120,00`).
 
-- Status Pending / Authorization wird verworfen
-- Einkäufe ohne explizites Vorzeichen werden als Abgang gebucht
-- Refunds / Credits bleiben positiv
-- `unique_import_id` = Transaction ID
+- Status Pending / Authorization / Failed wird verworfen
+- Vorzeichen kommt aus `Credit or Debit` (Beträge in der Datei sind positiv)
+- Ältere Karten-CSVs ohne diese Spalte invertieren Purchases weiterhin
+- `unique_import_id` = Unique ID / Transaction ID
+- Partner: gespeicherte Jeeves-Vendor-ID, sonst Vendor-E-Mail, sonst Payee-Name
 
 Datei im Journal-Dashboard über den normalen Statement-Import laden.
 n8n kann dieselbe Datei per JSON-RPC an `account.statement.import` schieben,

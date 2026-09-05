@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_partner_form_jeeves_vendor" model="ir.ui.view">
+        <field name="name">res.partner.form.jeeves.vendor</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='email'][1]" position="after">
+                <field name="jeeves_vendor_id" placeholder="Jeeves vendor id"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

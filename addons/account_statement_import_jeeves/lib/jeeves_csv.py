@@ -1,8 +1,9 @@
 """Jeeves Activity / statement CSV parser (Odoo-independent).
 
-Jeeves does not publish a stable bank-feed API. Exports from
-Activity & Exports and from credit statements use slightly different
-headers; this module normalizes both.
+Jeeves does not publish a stable bank-feed API. Live *Activity and Exports*
+files use ``Unique ID``, ``Posted At UTC``, ``Credit or Debit``, ``Payee``.
+Older activity and credit-statement exports use shorter headers. This
+module normalizes both.
 """
 
 from __future__ import annotations
@@ -12,79 +13,113 @@ import io
 from datetime import datetime
 from typing import Any, Iterable
 
-PENDING_STATUSES = {"pending", "authorization", "authorised", "authorized"}
-CREDIT_HINTS = {"credit", "refund", "payment", "reimbursement", "cashback"}
-DEBIT_HINTS = {"debit", "charge", "purchase", "fee", "withdrawal"}
+PENDING_STATUSES = {
+    "pending",
+    "authorization",
+    "authorised",
+    "authorized",
+    "failed",
+    "cancelled",
+    "canceled",
+    "declined",
+}
+CREDIT_HINTS = {"credit", "refund", "reimbursement", "cashback", "deposit"}
+DEBIT_HINTS = {
+    "debit",
+    "charge",
+    "purchase",
+    "fee",
+    "withdrawal",
+    "withdraw",
+    "payment",
+}
 
 COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "transaction_id": (
+        "unique id",
         "transaction id",
         "transaction_id",
         "transactionid",
-        "id",
         "reference id",
         "reference_id",
         "jeeves id",
         "txn id",
         "txn_id",
+        "id",
     ),
     "date": (
+        "posted at utc",
+        "posted at",
         "posted date",
         "posted_date",
         "settled date",
         "settlement date",
         "transaction date",
-        "date",
-        "created date",
+        "created at utc",
+        "created at",
         "created_at",
+        "created date",
         "completed date",
+        "date",
     ),
     "amount": (
-        "amount",
+        "amount (origin currency)",
+        "amount origin currency",
         "billing amount",
         "settled amount",
         "net amount",
         "transaction amount",
         "local amount",
+        "amount",
     ),
     "currency": (
         "currency",
         "billing currency",
         "settled currency",
         "transaction currency",
+        "origin currency",
     ),
     "merchant": (
+        "payee",
         "merchant",
         "merchant name",
-        "description",
         "vendor",
         "counterparty",
         "name",
     ),
     "status": (
-        "status",
         "transaction status",
+        "status",
         "state",
         "posted status",
     ),
-    "tx_type": (
-        "type",
-        "transaction type",
+    "direction": (
+        "credit or debit",
+        "debit or credit",
         "debit/credit",
         "debit credit",
+    ),
+    "tx_type": (
+        "transaction type",
+        "type",
         "direction",
     ),
+    "sub_type": ("sub transaction type",),
     "notes": (
         "memo",
         "notes",
         "note",
         "comment",
-        "category",
     ),
+    "payment_description": ("payment description",),
+    "invoice_number": ("invoice number",),
+    "vendor_email": ("vendor email",),
+    "vendor_id": ("vendor id",),
+    "category": ("category",),
     "account": (
-        "account",
+        "source account",
         "account name",
-        "card",
+        "account",
         "card last 4",
         "last 4",
     ),
@@ -101,23 +136,38 @@ DATE_FORMATS = (
     "%d-%m-%Y",
 )
 
+_LINE_EXTRA_KEYS = (
+    "account_label",
+    "currency_code",
+    "partner_email",
+    "jeeves_vendor_id",
+)
+
 
 class JeevesCSVError(ValueError):
     """CSV is not a usable Jeeves activity/statement export."""
 
 
 def _norm_header(value: str) -> str:
-    return " ".join(value.strip().lower().replace("_", " ").replace("-", " ").split())
+    text = value.strip().lower().replace("_", " ").replace("-", " ")
+    text = text.replace("(", " ").replace(")", " ")
+    return " ".join(text.split())
+
+
+def _find_column(normalized: dict[str, str], aliases: tuple[str, ...]) -> str | None:
+    for alias in aliases:
+        if alias in normalized:
+            return normalized[alias]
+    return None
 
 
 def _build_header_map(headers: Iterable[str]) -> dict[str, str]:
     mapping: dict[str, str] = {}
-    normalized = {_norm_header(header): header for header in headers}
+    normalized = {_norm_header(header): header for header in headers if header}
     for field, aliases in COLUMN_ALIASES.items():
-        for alias in aliases:
-            if alias in normalized:
-                mapping[field] = normalized[alias]
-                break
+        found = _find_column(normalized, aliases)
+        if found:
+            mapping[field] = found
     return mapping
 
 
@@ -130,7 +180,14 @@ def detect_jeeves_csv(raw: bytes | str) -> bool:
     mapping = _build_header_map(headers)
     has_amount = "amount" in mapping
     has_date = "date" in mapping
-    identity = {"transaction_id", "merchant", "status", "currency"}
+    identity = {
+        "transaction_id",
+        "merchant",
+        "status",
+        "currency",
+        "direction",
+        "vendor_id",
+    }
     return has_amount and has_date and bool(identity.intersection(mapping))
 
 
@@ -193,18 +250,49 @@ def _is_pending(status: str) -> bool:
     return status.strip().lower() in PENDING_STATUSES
 
 
-def _signed_amount(amount: float, tx_type: str, invert_card_charges: bool) -> float:
-    """Card activity exports usually list purchases as positive numbers."""
+def _cell(row: dict[str, str], mapping: dict[str, str], field: str) -> str:
+    header = mapping.get(field)
+    if not header:
+        return ""
+    return (row.get(header) or "").strip()
+
+
+def _signed_amount(
+    amount: float,
+    direction: str,
+    tx_type: str,
+    invert_card_charges: bool,
+) -> float:
+    """Live exports are unsigned; ``Credit or Debit`` is the sign."""
+    kind_direction = direction.strip().lower()
+    if kind_direction == "debit":
+        return -abs(amount)
+    if kind_direction == "credit":
+        return abs(amount)
     kind = tx_type.strip().lower()
     if any(hint in kind for hint in CREDIT_HINTS) and not any(
         hint in kind for hint in DEBIT_HINTS
     ):
         return abs(amount)
-    if invert_card_charges and amount > 0 and kind in ("", "debit", "charge", "purchase"):
+    if invert_card_charges and amount > 0 and kind in (
+        "",
+        "debit",
+        "charge",
+        "purchase",
+        "withdraw",
+        "withdrawal",
+        "payment",
+    ):
         return -amount
     if invert_card_charges and amount < 0 and any(hint in kind for hint in CREDIT_HINTS):
         return abs(amount)
     return amount
+
+
+def _payment_ref(partner: str, detail: str, tx_id: str) -> str:
+    if partner and detail and partner.casefold() != detail.casefold():
+        return f"{partner} — {detail}"
+    return partner or detail or tx_id
 
 
 def parse_jeeves_csv(
@@ -223,36 +311,69 @@ def parse_jeeves_csv(
     for index, row in enumerate(rows, start=1):
         if not any(row.values()):
             continue
-        status = row.get(mapping.get("status", ""), "")
+        status = _cell(row, mapping, "status")
         if skip_pending and _is_pending(status):
             continue
-        amount_raw = row.get(mapping["amount"], "")
+        amount_raw = _cell(row, mapping, "amount")
         if not amount_raw:
             continue
+        direction = _cell(row, mapping, "direction")
+        tx_type = _cell(row, mapping, "tx_type")
         amount = _signed_amount(
             _parse_amount(amount_raw),
-            row.get(mapping.get("tx_type", ""), ""),
+            direction,
+            tx_type,
             invert_card_charges,
         )
-        when = _parse_date(row[mapping["date"]])
-        tx_id = row.get(mapping.get("transaction_id", ""), "") or f"jeeves-row-{index}"
-        merchant = row.get(mapping.get("merchant", ""), "")
-        notes = row.get(mapping.get("notes", ""), "")
-        currency = row.get(mapping.get("currency", ""), "")
-        lines.append(
-            {
-                "date": when,
-                "payment_ref": merchant or notes or tx_id,
-                "ref": tx_id,
-                "unique_import_id": tx_id,
-                "amount": amount,
-                "partner_name": merchant or False,
-                "narration": notes or False,
-                "currency_code": currency or False,
-                "transaction_type": row.get(mapping.get("tx_type", ""), "") or False,
-                "account_label": row.get(mapping.get("account", ""), "") or False,
-            }
+        when = _parse_date(_cell(row, mapping, "date"))
+        tx_id = _cell(row, mapping, "transaction_id") or f"jeeves-row-{index}"
+        partner = _cell(row, mapping, "merchant")
+        invoice_number = _cell(row, mapping, "invoice_number")
+        memo = _cell(row, mapping, "notes")
+        payment_description = _cell(row, mapping, "payment_description")
+        category = _cell(row, mapping, "category")
+        sub_type = _cell(row, mapping, "sub_type")
+        vendor_email = _cell(row, mapping, "vendor_email")
+        vendor_id = _cell(row, mapping, "vendor_id")
+        detail = (
+            invoice_number
+            or memo
+            or payment_description
+            or category
+            or sub_type
+            or tx_type
         )
+        narration = " ".join(
+            part
+            for part in (
+                f"jeeves={tx_id}",
+                f"type={tx_type}" if tx_type else None,
+                f"status={status}" if status else None,
+                f"vendor={vendor_id}" if vendor_id else None,
+                f"email={vendor_email}" if vendor_email else None,
+                f"invoice={invoice_number}" if invoice_number else None,
+                f"memo={memo}" if memo else None,
+                payment_description or None,
+            )
+            if part
+        )
+        line = {
+            "date": when,
+            "payment_ref": _payment_ref(partner, detail, tx_id),
+            "ref": tx_id,
+            "unique_import_id": tx_id,
+            "amount": amount,
+            "partner_name": partner or False,
+            "narration": narration or False,
+            "currency_code": _cell(row, mapping, "currency") or False,
+            "transaction_type": tx_type or direction or False,
+            "account_label": _cell(row, mapping, "account") or False,
+        }
+        if vendor_email:
+            line["partner_email"] = vendor_email
+        if vendor_id:
+            line["jeeves_vendor_id"] = vendor_id
+        lines.append(line)
     return lines
 
 
@@ -270,8 +391,8 @@ def statement_from_rows(
     transactions = []
     for line in lines:
         values = dict(line)
-        values.pop("account_label", None)
-        values.pop("currency_code", None)
+        for key in _LINE_EXTRA_KEYS:
+            values.pop(key, None)
         transactions.append(values)
     statement = {
         "name": f"{name}/{min(dates).date().isoformat()}",
