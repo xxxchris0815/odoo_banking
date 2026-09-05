@@ -176,6 +176,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.5.0** |
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.4.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.12.0** |
+| Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.11.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -520,7 +521,11 @@ Zwei Wege, nimm **einen** pro Einzug, nicht beide:
 2. Im Journal `GC` steht die **Einzugszeile**
    `[confirmed] Kundenname — INV-…` (`PMxxx`) mit +Betrag, Partner und
    E-Mail/IBAN in der Notiz. Das ist die Zeile gegen die Rechnung.
-   Sie hängt am **Einzugsdatum** (charge date), nicht am Payout-Tag.
+   Die Zeile hängt am **Einzugsdatum** (charge date), nicht am Payout-Tag.
+   Partner-Match: zuerst gespeicherte GoCardless-Kunden-ID (`CUxxx` am
+   Kontakt), sonst eindeutige E-Mail, sonst IBAN. Nach dem ersten
+   E-Mail-/IBAN-Treffer schreibt Odoo die `CUxxx` auf den Kontakt —
+   IDs nicht von Hand pflegen. Nur Name allein speichert die ID nicht.
    Im Abstimmen-Bildschirm alle offenen Zeilen des Journals anzeigen,
    nicht nur das Statement vom Auszahlungstag.
 3. Dashboard → GC → **Abstimmen** → offene Rechnung desselben Partners.

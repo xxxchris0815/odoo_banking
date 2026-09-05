@@ -172,30 +172,52 @@ class OnlineBankStatementProviderGoCardlessPayments(models.Model):
             values["partner_name"] = values.get("partner_name") or partner.name
         return values
 
-    def _gc_match_partner(self, values):
-        """Prefer e-mail, then IBAN, then unique name. Skip ambiguous matches."""
-        Partner = self.env["res.partner"]
-        email = (values.pop("partner_email", None) or "")
-        if email is True or email is False:
-            email = ""
-        email = str(email).strip()
-        company = values.pop("partner_company", None) or ""
-        if company is True or company is False:
-            company = ""
-        company = str(company).strip()
-        values.pop("gc_customer_id", None)
-        account_number = (values.get("account_number") or "")
-        if account_number is True or account_number is False:
-            account_number = ""
-        account_number = str(account_number).replace(" ", "")
-        name = values.get("partner_name") or ""
-        if name is True or name is False:
-            name = ""
-        name = str(name).strip()
+    def _gc_text(self, value):
+        if value in (True, False, None):
+            return ""
+        return str(value).strip()
 
+    def _gc_remember_customer_id(self, partner, gc_id):
+        """Store CUxxx after a unique e-mail/IBAN hit so later pulls use the id."""
+        if not partner or not gc_id or "gocardless_customer_id" not in partner._fields:
+            return
+        current = (partner.gocardless_customer_id or "").strip()
+        if current:
+            return
+        other = self.env["res.partner"].search(
+            [
+                ("gocardless_customer_id", "=", gc_id),
+                ("id", "!=", partner.id),
+            ],
+            limit=1,
+        )
+        if other:
+            _logger.info(
+                "GoCardless customer %s already on partner %s, not writing to %s",
+                gc_id,
+                other.id,
+                partner.id,
+            )
+            return
+        partner.sudo().write({"gocardless_customer_id": gc_id})
+
+    def _gc_match_partner(self, values):
+        """Id first, then e-mail, IBAN, unique name. Skip ambiguous matches."""
+        Partner = self.env["res.partner"]
+        gc_id = self._gc_text(values.pop("gc_customer_id", None))
+        email = self._gc_text(values.pop("partner_email", None))
+        company = self._gc_text(values.pop("partner_company", None))
+        account_number = self._gc_text(values.get("account_number")).replace(" ", "")
+        name = self._gc_text(values.get("partner_name"))
+
+        if gc_id and "gocardless_customer_id" in Partner._fields:
+            found = Partner.search([("gocardless_customer_id", "=", gc_id)], limit=2)
+            if len(found) == 1:
+                return found
         if email:
             found = Partner.search([("email", "=ilike", email)], limit=2)
             if len(found) == 1:
+                self._gc_remember_customer_id(found, gc_id)
                 return found
         if account_number:
             Bank = self.env["res.partner.bank"]
@@ -208,6 +230,7 @@ class OnlineBankStatementProviderGoCardlessPayments(models.Model):
                 ]
             bank = Bank.search(domain, limit=1)
             if bank:
+                self._gc_remember_customer_id(bank.partner_id, gc_id)
                 return bank.partner_id
         for candidate in (company, name):
             if not candidate:

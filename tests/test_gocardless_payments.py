@@ -87,6 +87,7 @@ def test_payment_line_carries_customer_for_reconciliation():
     )
     assert line["partner_name"] == "Ada Lovelace (Expect Magic)"
     assert line["partner_email"] == "ada@example.com"
+    assert line["gc_customer_id"] == "CU1"
     assert line["account_number"] == "DE89370400440532013000"
     assert line["payment_ref"] == "[confirmed] Ada Lovelace (Expect Magic) — INV-1042"
     assert "email=ada@example.com" in line["narration"]

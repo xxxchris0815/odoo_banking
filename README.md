@@ -163,6 +163,9 @@ Payment-ID `PMxxx`), nicht gegen die Sammelauszahlung (`[payout paid] Bank trans
 Der Provider zieht die Abbuchungen per `created_at` und über
 `GET /payout_items?payout=POxxx` (nicht `/payments?payout=` — das ist 400),
 plus Name/E-Mail/IBAN über das Mandat.
+Partner: gespeicherte `CUxxx` am Kontakt, sonst eindeutige E-Mail, sonst
+IBAN. Der erste E-Mail-/IBAN-Treffer schreibt die Kunden-ID auf den
+Kontakt; später gilt die ID auch wenn sich die E-Mail ändert.
 OCA würde Einzüge mit älterem Charge-Datum sonst verwerfen — die werden direkt
 angelegt, aber nur wenn sie zu einem Payout im Pull-Fenster gehören.
 Zukünftige Raten (Charge-Datum nach dem Bis-Datum) bleiben draußen.
