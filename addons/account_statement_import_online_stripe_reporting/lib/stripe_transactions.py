@@ -475,23 +475,7 @@ class StripeClient:
         lines = statement_lines_from_transactions(
             transactions, date_since, date_until, currency=currency
         )
-        extras: dict[str, Any] = {}
-        try:
-            balance = self._request("GET", "/v1/balance")
-            extras = _balance_extras(balance, currency)
-        except StripeHTTPError as error:
-            _logger.info("Stripe balance lookup skipped: %s", error)
-        return lines, extras
-
-
-def _balance_extras(balance: dict[str, Any], currency: str | None) -> dict[str, Any]:
-    wanted = (currency or "").lower()
-    available = 0.0
-    for row in balance.get("available") or []:
-        code = (row.get("currency") or "").lower()
-        if wanted and code != wanted:
-            continue
-        available = minor_to_major(row.get("amount") or 0, code or "EUR")
-        if wanted:
-            break
-    return {"balance_end_real": available}
+        # Do not pass Stripe's live /v1/balance. OCA pulls one calendar day
+        # at a time; "available now" (often 0 after a payout) becomes that
+        # day's ending balance and trips the running-balance warning.
+        return lines, {}

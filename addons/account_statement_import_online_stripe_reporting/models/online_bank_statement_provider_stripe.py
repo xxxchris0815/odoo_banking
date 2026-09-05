@@ -119,7 +119,7 @@ class OnlineBankStatementProviderStripe(models.Model):
             [("name", "=", "account_statement_import_online_stripe_reporting")],
             limit=1,
         )
-        version = module.latest_version or module.installed_version or "19.0.1.1.0"
+        version = module.latest_version or module.installed_version or "19.0.1.2.0"
         for rec in self:
             rec.stripe_module_version = version
 
@@ -169,6 +169,23 @@ class OnlineBankStatementProviderStripe(models.Model):
                 continue
             filtered.append(line)
         return filtered, extras
+
+    def _update_statement_balances(self, statement_values):
+        """Ending balance = start + this statement's lines, not Stripe live."""
+        if self.service != "stripe":
+            return super()._update_statement_balances(statement_values)
+        statement_values.pop("balance_end_real", None)
+        super()._update_statement_balances(statement_values)
+        total = 0.0
+        for command in statement_values.get("line_ids") or []:
+            if (
+                isinstance(command, (list, tuple))
+                and len(command) >= 3
+                and isinstance(command[2], dict)
+            ):
+                total += float(command[2].get("amount") or 0)
+        start = float(statement_values.get("balance_start") or 0)
+        statement_values["balance_end_real"] = start + total
 
     def _stripe_handle_webhook(self, headers, raw_body, event):
         self.ensure_one()

@@ -223,10 +223,6 @@ def test_client_paginates_and_expands_source():
     http = _FakeHttp(
         {
             ("GET", "/v1/balance_transactions"): listing,
-            ("GET", "/v1/balance"): lambda *_: (
-                200,
-                {"available": [{"amount": 0, "currency": "eur"}]},
-            ),
         }
     )
     client = StripeClient("rk_test", http_request=http, page_limit=1)
@@ -235,7 +231,7 @@ def test_client_paginates_and_expands_source():
     )
     ids = [line["unique_import_id"] for line in lines]
     assert ids[0].startswith("st:txn:")
-    assert extras["balance_end_real"] == 0.0
+    assert extras == {}
     assert any(call[1].startswith(STRIPE_API_BASE) for call in http.calls)
 
 
