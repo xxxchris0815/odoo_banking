@@ -1,7 +1,9 @@
-"""Jeeves MCP ``list_transactions`` → statement lines (Odoo-independent).
+"""Jeeves MCP client (Odoo-independent).
 
 Live server: ``https://mcp-prod.jeev.es/mcp`` (Streamable HTTP, often SSE).
-Auth is ``Authorization: Bearer <key>``. Only read tools are called.
+Auth is ``Authorization: Bearer <key>``. Allowed tools: statement reads
+plus ``list_vendors`` / ``create_vendor`` / ``update_vendor``. Card and
+payment tools stay blocked.
 
 ``list_transactions`` needs ``startDate`` (ISO). Optional filters we send:
 ``endDate``, ``productAccountIds``, ``page``, ``pageSize``,
@@ -23,7 +25,12 @@ from urllib.parse import urlparse
 JEEVES_MCP_URL = "https://mcp-prod.jeev.es/mcp"
 LIST_TRANSACTIONS_TOOL = "list_transactions"
 LIST_ACCOUNTS_TOOL = "list_accounts"
+LIST_VENDORS_TOOL = "list_vendors"
+CREATE_VENDOR_TOOL = "create_vendor"
+UPDATE_VENDOR_TOOL = "update_vendor"
 READ_ONLY_TOOLS = frozenset({LIST_TRANSACTIONS_TOOL, LIST_ACCOUNTS_TOOL})
+VENDOR_TOOLS = frozenset({LIST_VENDORS_TOOL, CREATE_VENDOR_TOOL, UPDATE_VENDOR_TOOL})
+ALLOWED_TOOLS = READ_ONLY_TOOLS | VENDOR_TOOLS
 MCP_PROTOCOL_VERSION = "2025-03-26"
 PAGE_SIZE = 100
 SETTLED_STATUSES = frozenset({"settled", "completed", "posted", "booked"})
@@ -213,6 +220,43 @@ def extract_total_records(text: str) -> int | None:
     if not match:
         return None
     return int(match.group(1))
+
+
+def unwrap_mcp_json_value(payload: Any) -> Any:
+    """Parse the JSON object/array hidden in MCP ``content[].text``."""
+    for text in iter_mcp_text(payload):
+        blob = str(text).strip()
+        if not blob:
+            continue
+        try:
+            return json.loads(blob)
+        except json.JSONDecodeError:
+            starts = [index for index in (blob.find("{"), blob.find("[")) if index >= 0]
+            if not starts:
+                continue
+            try:
+                return json.loads(blob[min(starts) :])
+            except json.JSONDecodeError:
+                continue
+    if isinstance(payload, dict):
+        if "data" in payload or "vendorCacheId" in payload or "vendorId" in payload:
+            return payload
+        result = payload.get("result")
+        if isinstance(result, dict) and result.get("content") is None:
+            return result
+    if isinstance(payload, list):
+        return payload
+    return None
+
+
+def mcp_tool_error_text(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict) or not result.get("isError"):
+        return None
+    texts = [text.strip() for text in iter_mcp_text(result) if str(text).strip()]
+    return " ".join(texts) or "Jeeves MCP tool error"
 
 
 def iter_mcp_text(payload: Any) -> list[str]:
@@ -424,6 +468,16 @@ def _decode_sse_json(body: str) -> Any:
     return chunks[-1]
 
 
+def default_http_request(method, url, headers, data=None):
+    """``requests`` backend used by the Odoo provider and vendor wizard."""
+    import requests
+
+    response = requests.request(
+        method, url, headers=headers, data=data, timeout=60
+    )
+    return response.status_code, dict(response.headers), response.text
+
+
 def parse_mcp_http_body(body: str | bytes, content_type: str = "") -> Any:
     text = body.decode() if isinstance(body, bytes) else (body or "")
     if not text.strip():
@@ -500,6 +554,9 @@ class JeevesMCPClient:
         )
         if isinstance(parsed, dict) and parsed.get("error"):
             raise JeevesMCPError(f"Jeeves MCP error: {parsed['error']}")
+        tool_error = mcp_tool_error_text(parsed)
+        if tool_error:
+            raise JeevesMCPError(f"Jeeves MCP tool error: {tool_error}")
         return parsed
 
     def initialize(self) -> None:
@@ -511,7 +568,7 @@ class JeevesMCPClient:
                 "params": {
                     "protocolVersion": MCP_PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "odoo-jeeves", "version": "19.0.1.4"},
+                    "clientInfo": {"name": "odoo-jeeves", "version": "19.0.1.5"},
                 },
             }
         )
@@ -525,7 +582,7 @@ class JeevesMCPClient:
         self._initialized = True
 
     def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
-        if name not in READ_ONLY_TOOLS:
+        if name not in ALLOWED_TOOLS:
             raise JeevesMCPConfigError(f"Refusing Jeeves MCP write tool {name}")
         if not self._initialized:
             self.initialize()
@@ -593,3 +650,67 @@ class JeevesMCPClient:
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         rows = self.list_transactions(date_since, date_until)
         return statement_lines_from_mcp_transactions(rows), {}
+
+    def list_vendors(
+        self,
+        search: str | None = None,
+        *,
+        page_size: int = 20,
+    ) -> list[dict[str, Any]]:
+        from .jeeves_vendors import unwrap_mcp_vendors
+
+        collected: list[dict[str, Any]] = []
+        page = 1
+        total = None
+        while True:
+            arguments: dict[str, Any] = {"page": page, "pageSize": page_size}
+            if search:
+                arguments["searchQuery"] = search
+            rows, reported = unwrap_mcp_vendors(
+                self.call_tool(LIST_VENDORS_TOOL, arguments)
+            )
+            collected.extend(rows)
+            if total is None:
+                total = reported
+            if total is not None and len(collected) >= total:
+                break
+            if len(rows) < page_size:
+                break
+            page += 1
+            if page > 100:
+                raise JeevesMCPError("Jeeves MCP list_vendors exceeded 100 pages")
+        return collected
+
+    def create_vendor(self, draft) -> dict[str, Any]:
+        from .jeeves_vendors import (
+            CREATE_VENDOR_TOOL,
+            JeevesVendorError,
+            build_create_contact_arguments,
+            build_create_initial_arguments,
+            build_create_payment_arguments,
+            extract_created_vendor_id,
+            extract_vendor_cache_id,
+        )
+
+        first = self.call_tool(
+            CREATE_VENDOR_TOOL, build_create_initial_arguments(draft)
+        )
+        cache_id = extract_vendor_cache_id(first)
+        second = self.call_tool(
+            CREATE_VENDOR_TOOL, build_create_payment_arguments(draft, cache_id)
+        )
+        try:
+            cache_id = extract_vendor_cache_id(second)
+        except JeevesVendorError:
+            pass
+        third = self.call_tool(
+            CREATE_VENDOR_TOOL, build_create_contact_arguments(draft, cache_id)
+        )
+        vendor_id = extract_created_vendor_id(third)
+        return {"id": vendor_id, "payload": third}
+
+    def update_vendor(self, draft) -> dict[str, Any]:
+        from .jeeves_vendors import UPDATE_VENDOR_TOOL, build_update_arguments
+
+        payload = self.call_tool(UPDATE_VENDOR_TOOL, build_update_arguments(draft))
+        return {"id": draft.vendor_id, "payload": payload}

@@ -11,3 +11,7 @@ from .jeeves_mcp import (  # noqa: F401
     JeevesMCPClient,
     unwrap_mcp_transactions,
 )
+from .jeeves_vendors import (  # noqa: F401
+    JeevesVendorDraft,
+    unwrap_mcp_vendors,
+)

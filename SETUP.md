@@ -177,7 +177,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.6.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.13.0** |
 | Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.12.0** |
-| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.4.0** |
+| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.5.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -433,8 +433,20 @@ Zwei Wege, **einen** pro Zeitraum, nicht beide (sonst Duplikate):
    zur Journal-Währung.
 4. Speichern. **Pull Online Bank Statement** für ein paar Tage testen.
 5. Der OCA-Cron holt danach täglich. n8n darf diese Zeilen **nicht**
-   zusätzlich ins Journal schreiben. Odoo ruft nur Lesen-Tools
-   (`list_accounts`, `list_transactions`).
+   zusätzlich ins Journal schreiben. Für Auszüge ruft Odoo nur
+   `list_accounts` / `list_transactions`.
+
+**Lieferanten in Jeeves** (am Kontakt, Button *Jeeves* / *Create / update
+in Jeeves*):
+
+1. Kontakt muss Name, E-Mail, Telefon, Straße, PLZ, Ort, Land und eine
+   IBAN (Bankverbindung) haben. Telefon im Format `+49 151…`.
+2. Der Assistent füllt die Felder und sucht per `list_vendors` nach
+   E-Mail/Name. Gibt es den Lieferanten schon, wird er **aktualisiert**
+   (`update_vendor`), sonst in drei Schritten angelegt (`create_vendor`).
+3. Die Jeeves-Vendor-ID landet auf dem Kontakt. *Link ID only* schreibt
+   nur die ID, ohne Jeeves zu ändern.
+4. Karten anlegen oder Rechnungen zahlen tut Odoo **nicht**.
 
 Live-`list_transactions` paginiert (max. 100/Seite) und filtert
 `settled`. Die Text-Antwort hat oft keine Unique ID — Odoo bildet dann

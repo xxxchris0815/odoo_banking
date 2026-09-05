@@ -2,8 +2,6 @@
 
 import logging
 
-import requests
-
 from odoo import api, models
 from odoo.exceptions import UserError
 
@@ -12,16 +10,10 @@ from ..lib.jeeves_mcp import (
     JeevesMCPClient,
     JeevesMCPConfigError,
     JeevesMCPError,
+    default_http_request,
 )
 
 _logger = logging.getLogger(__name__)
-
-
-def _requests_http(method, url, headers, data=None):
-    response = requests.request(
-        method, url, headers=headers, data=data, timeout=60
-    )
-    return response.status_code, dict(response.headers), response.text
 
 
 class OnlineBankStatementProviderJeeves(models.Model):
@@ -53,8 +45,30 @@ class OnlineBankStatementProviderJeeves(models.Model):
             account_id=self.username or "",
             currency=self._jeeves_journal_currency(),
             mcp_url=self.api_base or JEEVES_MCP_URL,
-            http_request=_requests_http,
+            http_request=default_http_request,
         )
+
+    @api.model
+    def _jeeves_find_provider(self):
+        """Any Jeeves provider on this company that has an MCP key."""
+        company = self.env.company
+        found = self.env["online.bank.statement.provider"]
+        for provider in self.search([("service", "=", "jeeves")]):
+            if not provider.password:
+                continue
+            journal = provider.journal_id
+            if journal and journal.company_id and journal.company_id != company:
+                continue
+            found = provider
+            break
+        if not found:
+            raise UserError(
+                self.env._(
+                    "Set a Jeeves online bank statement provider with an "
+                    "MCP API key first."
+                )
+            )
+        return found
 
     def _jeeves_obtain_statement_data(self, date_since, date_until):
         self.ensure_one()

@@ -10,6 +10,18 @@ class ResPartner(models.Model):
         string="Jeeves vendor",
         index=True,
         copy=False,
-        help="Jeeves Vendor Id. Filled on the first unique e-mail match; "
-        "later CSV rows use this id.",
+        help="Jeeves Vendor Id. Filled on create/update from this partner, "
+        "or on the first unique e-mail match from a statement.",
     )
+
+    def action_open_jeeves_vendor_wizard(self):
+        self.ensure_one()
+        partner = self.commercial_partner_id or self
+        return {
+            "type": "ir.actions.act_window",
+            "name": "Jeeves vendor",
+            "res_model": "jeeves.vendor.wizard",
+            "view_mode": "form",
+            "target": "new",
+            "context": {"default_partner_id": partner.id},
+        }
