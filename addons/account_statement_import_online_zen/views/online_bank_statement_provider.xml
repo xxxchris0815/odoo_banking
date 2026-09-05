@@ -36,12 +36,12 @@
                         <field
                             name="certificate_public_key"
                             string="mTLS client certificate"
-                            placeholder="-----BEGIN CERTIFICATE-----"
+                            placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"
                         />
                         <field
                             name="certificate_private_key"
                             string="mTLS private key"
-                            password="True"
+                            placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----END PRIVATE KEY-----"
                         />
                         <field
                             name="certificate_chain"
