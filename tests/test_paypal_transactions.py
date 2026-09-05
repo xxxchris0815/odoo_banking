@@ -13,6 +13,7 @@ from account_statement_import_online_paypal_reporting.lib.paypal_transactions im
     as_rfc3339,
     format_payer_name,
     new_webhook_token,
+    public_https_base,
     statement_line_from_transaction,
     statement_lines_from_transaction,
     statement_lines_from_transactions,
@@ -432,6 +433,17 @@ def test_september_live_shape_nets_refund_and_fee():
     amounts = [line["amount"] for line in lines]
     assert amounts == [4500.0, -112.40, -4500.0, 112.40]
     assert {line["partner_name"] for line in lines} == {"Eva Muster", "PayPal"}
+
+
+def test_webhook_url_is_always_https_without_odoo_port():
+    assert public_https_base("http://erp.example.com:8069") == "https://erp.example.com"
+    assert public_https_base("http://erp.alexandrawennmacher.de") == (
+        "https://erp.alexandrawennmacher.de"
+    )
+    assert public_https_base("https://erp.example.com") == "https://erp.example.com"
+    url = webhook_url("http://erp.example.com:8069", "tok-1")
+    assert url == "https://erp.example.com/paypal/webhook/tok-1"
+    assert not url.startswith("http://")
 
 
 def test_each_paypal_account_gets_its_own_webhook_url():

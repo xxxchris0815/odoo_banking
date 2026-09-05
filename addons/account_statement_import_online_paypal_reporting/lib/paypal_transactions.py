@@ -14,7 +14,7 @@ from base64 import b64encode
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 _logger = logging.getLogger(__name__)
 
@@ -128,10 +128,34 @@ def new_webhook_token() -> str:
     return secrets.token_urlsafe(24)
 
 
+def public_https_base(base_url: str | None) -> str:
+    """PayPal rejects http webhooks. Odoo often stores http://host:8069.
+
+    Keep the hostname from ``web.base.url``, force https, drop internal
+    Odoo ports that sit behind a reverse proxy.
+    """
+    raw = (base_url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    host = parsed.hostname or ""
+    if not host:
+        return ""
+    port = parsed.port
+    if port and port not in (80, 443, 8069, 8071, 8072):
+        netloc = f"{host}:{port}"
+    else:
+        netloc = host
+    return f"https://{netloc}"
+
+
 def webhook_url(base_url: str, token: str | None) -> str:
     if not token:
         return ""
-    return f"{str(base_url or '').rstrip('/')}{WEBHOOK_PATH_PREFIX}/{token}"
+    base = public_https_base(base_url) or str(base_url or "").rstrip("/")
+    if base.startswith("http://"):
+        base = "https://" + base[len("http://") :]
+    return f"{base.rstrip('/')}{WEBHOOK_PATH_PREFIX}/{token}"
 
 
 def webhook_signature_fields(headers: dict[str, Any] | None) -> dict[str, str]:

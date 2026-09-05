@@ -164,7 +164,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Anzeigename | Technischer Name | Version |
 | --- | --- | --- |
 | Community Banking Stack | `banking_community` | **19.0.1.6.0** |
-| PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.3.0** |
+| PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.4.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -206,6 +206,11 @@ Sandbox-Keys funktionieren nicht gegen die Live-API. Umgekehrt auch nicht.
 Jedes Journal / jeder Provider hat eine **eigene** URL:
 
 `https://DEINE-DOMAIN/paypal/webhook/<token>`
+
+PayPal akzeptiert nur HTTPS. Die angezeigte URL wird immer auf
+`https://` ohne internen Odoo-Port (`:8069`) umgeschrieben. Wenn der
+Hostname falsch ist: Einstellungen → Technisch → Systemparameter
+`web.base.url` = `https://DEINE-DOMAIN` (ohne Port).
 
 Konto A → URL von Provider A, Konto B → URL von Provider B.
 Dieselbe URL für zwei Merchant-Accounts nicht verwenden.
@@ -500,7 +505,8 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 | Kein Menü „Online Bank Statement Providers“ | Gruppe volle Buchhaltung fehlt, oder `account_statement_import_online` nicht installiert |
 | Provider-Feld am Journal fehlt | Journal-Typ ist nicht Bank |
 | PayPal pull leer | Sandbox-Key, oder Zeitraum älter als 3 Jahre |
-| PayPal-Formular zeigt Client ID zweimal | OCA-Modul `account_statement_import_online_paypal` ist noch aktiv, oder Stack nicht auf **19.0.1.6.0**. Richtig: `account_statement_import_online_paypal_reporting` **19.0.1.2.0** (Expect Magic). OCA-PayPal deinstallieren, Stack + PayPal-Reporting upgraden. Im Provider-Formular steht die Version unter **Module version**. |
+| PayPal-Formular zeigt Client ID zweimal | OCA-Modul `account_statement_import_online_paypal` ist noch aktiv, oder Stack nicht auf **19.0.1.6.0**. Richtig: `account_statement_import_online_paypal_reporting` **19.0.1.4.0** (Expect Magic). OCA-PayPal deinstallieren, Stack + PayPal-Reporting upgraden. Im Provider-Formular steht die Version unter **Module version**. |
+| PayPal lehnt die Webhook-URL ab (http) | Odoo speichert oft `http://…:8069`. Ab 19.0.1.4.0 wird daraus `https://deine-domain` ohne Port. Zusätzlich Einstellungen → Technische Parameter `web.base.url` auf `https://erp.…` setzen. |
 | ZEN 403 | Terminal-Key statt Transfers-Key |
 | GoCardless-Einzug fehlt | Access Token Live/Sandbox verdreht, oder Webhook-URL nicht erreichbar |
 | Fail erzeugt eine zweite Zeile | n8n schreibt noch parallel; nur der Payments-Provider darf dieses Journal füllen |
