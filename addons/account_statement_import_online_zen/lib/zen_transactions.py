@@ -18,7 +18,9 @@ from urllib.parse import urlencode, urljoin, urlparse
 ZEN_DEFAULT_API_BASE = "https://api-services.zen.com"
 ZEN_TEST_API_BASE = "https://api-services.zen-test.com"
 ACCOUNTS_PATH = "accounts/v1.0"
-HISTORY_PATH = "payments/v1.0/history"
+# Live n8n / payment details use GET /payments/v1.0/{uuid}.
+# /payments/v1.0/history is treated as paymentId "history" and ZEN returns 500.
+HISTORY_PATH = "payments/v1.0"
 PAYMENT_PATH = "payments/v1.0"
 WEBHOOK_PATH_PREFIX = "/zen/webhook"
 SETTLED_STATUS = "SETTLED"
