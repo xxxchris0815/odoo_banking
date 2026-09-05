@@ -77,7 +77,8 @@ def test_incoming_line_uses_booked_date_and_positive_amount():
     assert line["unique_import_id"] == payment_unique_id(SETTLED_IN["id"])
     assert line["partner_name"] == "Acme GmbH"
     assert line["account_number"] == "DE89370400440532013000"
-    assert line["payment_ref"] == "[paid] Acme GmbH — Invoice 1042"
+    assert line["payment_ref"] == "Acme GmbH — Invoice 1042"
+    assert "iban=DE89370400440532013000" in line["narration"]
     assert line["currency_code"] == "EUR"
 
 
@@ -349,8 +350,27 @@ def test_live_gocardless_payout_into_zen_has_no_zero_fee_line():
     assert line["date"] == datetime(2026, 9, 4, 10, 59, 56)
     assert line["partner_name"] == "GOCARDLESS LTD"
     assert line["account_number"] == "FR7630004021180001015622692"
-    assert line["payment_ref"] == "[paid] GOCARDLESS LTD — EXPECTMAGIC-N5N98Y"
+    assert line["payment_ref"] == "GOCARDLESS LTD — EXPECTMAGIC-N5N98Y"
+    assert "[paid]" not in line["payment_ref"]
+    assert "iban=FR7630004021180001015622692" in line["narration"]
     assert line["unique_import_id"] == payment_unique_id(LIVE_PAYMENT["id"])
+
+
+def test_sender_iban_field_becomes_account_number_without_paid_prefix():
+    tx = dict(
+        SETTLED_IN,
+        sender={
+            "name": "ISABELL WERNER",
+            "iban": "DE89 3704 0044 0532 0130 00",
+        },
+        title="INV/2026/00119",
+    )
+    line = statement_line_from_transaction(tx)
+    assert line["account_number"] == "DE89370400440532013000"
+    assert line["partner_name"] == "ISABELL WERNER"
+    assert line["payment_ref"] == "ISABELL WERNER — INV/2026/00119"
+    assert "[paid]" not in line["payment_ref"]
+    assert "iban=DE89370400440532013000" in line["narration"]
 
 
 def test_outgoing_fee_is_a_separate_line():

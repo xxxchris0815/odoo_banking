@@ -173,9 +173,9 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Anzeigename | Technischer Name | Version |
 | --- | --- | --- |
 | Community Banking Stack | `banking_community` | **19.0.1.8.0** |
-| PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.4.0** |
-| Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.3.0** |
-| Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.11.0** |
+| PayPal Bank Feed (Expect Magic) | `account_statement_import_online_paypal_reporting` | **19.0.1.5.0** |
+| Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.4.0** |
+| Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.12.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -251,6 +251,8 @@ drei Tage nach (wie ein kurzer Pull).
      `[fee] PayPal — TXN…`
    - Auszahlung auf die Hausbank: `[paid] Withdrawal — …` (minus)
    - Erstattung: eigene Zeile minus, Gebühr oft plus
+   - Partner: PayPal hat keine IBAN. Steht die Zahler-E-Mail genau einmal
+     auf einem Kontakt, setzt Odoo `partner_id`.
 4. Denselben Zeitraum ein zweites Mal pullen: keine Duplikate
    (`pp:tx:{transaction_id}`).
 
@@ -281,6 +283,7 @@ manuell im Dashboard.
 
 Erwartung: `[paid] Kundenname — Produkt`, `[fee] Stripe — txn_…`,
 `[paid] Payout — po_…`. `unique_import_id` = `st:txn:…`.
+Partner: Stripe hat keine IBAN. Match über die eindeutige Kunden-E-Mail.
 
 Saldo: PayPal schickt `available_balance` auf jeder Transaktion. Stripe
 nicht — `/v1/balance` ist nur das Guthaben *jetzt*. Der Feed rekonstruiert
@@ -341,7 +344,10 @@ Webhook prüfen:
    500 = mTLS/API beim Nachladen der Zahlung.
 3. Container-Log: `docker logs odoo_app 2>&1 | grep -i zen`
    Erfolg: `ZEN webhook payment=…` und `ZEN webhook booked payment=…`.
-4. Journal *ZEN EUR*: Zeile `[paid] …`, `unique_import_id` `zen:pay:{id}`.
+4. Journal *ZEN EUR*: Zeile `Partner — Verwendungszweck` (ohne `[paid]`),
+   `unique_import_id` `zen:pay:{id}`. Gegenpartei-IBAN steht auf der Zeile
+   und in der Narration (`iban=…`). Liegt dieselbe IBAN unter
+   *Kontakte → Bankkonten*, setzt Odoo den Partner automatisch.
    Zweiter Hook dieselbe ID: 200 und `already on the journal` — kein Duplikat.
 
 ### 6c GoCardless Payments — Daten eintragen
@@ -610,6 +616,8 @@ Haken setzen, bevor du n8n endgültig abschaltest:
 | GoCardless-Einzug fehlt | Access Token Live/Sandbox verdreht, oder Webhook-URL nicht erreichbar |
 | Fail erzeugt eine zweite Zeile | n8n schreibt noch parallel; nur der Payments-Provider darf dieses Journal füllen |
 | Clearing bleibt nach Payout offen | Gebührenzeile fehlt oder Bankeingang wurde zusätzlich ins GC-Journal importiert |
+| ZEN-Zeile heißt noch `[paid] Name — INV/…` | Altes Label aus dem Status `SETTLED→paid`. Ab **19.0.1.12.0** nur noch `Name — INV/…`. Bestehende Zeilen bleiben (gleiche `unique_import_id`). Zeile editieren oder Auszug löschen und den Tag neu pullen. |
+| ZEN-Zeile ohne Partner | Gegenpartei-IBAN muss unter *Kontakte → Bankkonten* liegen. PayPal/Stripe matchen per E-Mail, nicht per IBAN. |
 | ZEN pull leer | Nur IN_PROGRESS im Zeitraum, oder falsche Account-UUID/IBAN |
 | Jede Zeile doppelt | n8n läuft noch parallel, oder einmal Datei **und** Online für denselben Feed |
 | Jeeves-Beträge positiv statt Aufwand | Datei hat bereits Minusbeträge und wurde zusätzlich invertiert — CSV-Header `Type` prüfen oder eine Zeile zum Nachstellen schicken |

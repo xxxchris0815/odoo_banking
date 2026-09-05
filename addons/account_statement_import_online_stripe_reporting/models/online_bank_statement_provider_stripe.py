@@ -119,7 +119,7 @@ class OnlineBankStatementProviderStripe(models.Model):
             [("name", "=", "account_statement_import_online_stripe_reporting")],
             limit=1,
         )
-        version = module.latest_version or module.installed_version or "19.0.1.3.0"
+        version = module.latest_version or module.installed_version or "19.0.1.4.0"
         for rec in self:
             rec.stripe_module_version = version
 
@@ -158,6 +158,7 @@ class OnlineBankStatementProviderStripe(models.Model):
         filtered = []
         for line in lines:
             currency_code = line.pop("currency_code", None)
+            self._assign_partner_by_email(line)
             line.pop("partner_email", None)
             if currency_code and currency and currency_code != currency:
                 _logger.info(
@@ -169,6 +170,22 @@ class OnlineBankStatementProviderStripe(models.Model):
                 continue
             filtered.append(line)
         return filtered, extras
+
+    def _assign_partner_by_email(self, line):
+        email = line.get("partner_email") or line.get("account_number") or ""
+        if email in (True, False, None):
+            return
+        email = str(email).strip()
+        if "@" not in email:
+            return
+        found = self.env["res.partner"].sudo().search(
+            [("email", "=ilike", email)], limit=2
+        )
+        if len(found) != 1:
+            return
+        line["partner_id"] = found.id
+        if not line.get("partner_name"):
+            line["partner_name"] = found.name
 
     def _update_statement_balances(self, statement_values):
         """Keep extras when Stripe reconstructed the wallet; else start + lines."""

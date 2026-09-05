@@ -317,6 +317,23 @@ def _signed_amount(transaction: dict[str, Any]) -> float:
     return value
 
 
+def _party_account_number(
+    party: dict[str, Any] | None, transaction: dict[str, Any] | None = None
+) -> str | bool:
+    """Live payloads use ``iban``; some history rows use ``accountNumber``."""
+    party = party or {}
+    for key in ("accountNumber", "iban", "account_number"):
+        value = party.get(key)
+        if value:
+            return str(value).replace(" ", "").upper()
+    transaction = transaction or {}
+    for key in ("partner_account_iban", "partnerAccountIban"):
+        value = transaction.get(key)
+        if value:
+            return str(value).replace(" ", "").upper()
+    return False
+
+
 def _counterparty(transaction: dict[str, Any]) -> dict[str, Any]:
     direction = normalize_direction(transaction.get("direction"))
     if direction == "OUTGOING":
@@ -325,7 +342,7 @@ def _counterparty(transaction: dict[str, Any]) -> dict[str, Any]:
         party = transaction.get("sender") or {}
     return {
         "partner_name": party.get("name") or False,
-        "account_number": party.get("accountNumber") or False,
+        "account_number": _party_account_number(party, transaction),
     }
 
 
@@ -340,12 +357,11 @@ def status_label(transaction: dict[str, Any]) -> str:
     return status.lower() or "unknown"
 
 
-def _payment_ref(status: str, partner: str | None, detail: str) -> str:
+def _payment_ref(partner: str | None, detail: str) -> str:
+    """Label is partner + purpose. Status stays on the statement line, not here."""
     if partner and detail and partner not in detail:
-        return f"[{status}] {partner} — {detail}"
-    if partner:
-        return f"[{status}] {partner}"
-    return f"[{status}] {detail}"
+        return f"{partner} — {detail}"
+    return partner or detail
 
 
 def fee_items(transaction: dict[str, Any]) -> list[tuple[str, dict[str, Any], float]]:
@@ -385,6 +401,9 @@ def statement_line_from_transaction(transaction: dict[str, Any]) -> dict[str, An
             f"type={tx_type}" if tx_type else None,
             f"status={transaction.get('status')}" if transaction.get("status") else None,
             f"channel={channel}" if channel else None,
+            f"iban={counterparty['account_number']}"
+            if counterparty["account_number"]
+            else None,
             f"related={transaction.get('relatedTransaction')}"
             if transaction.get("relatedTransaction")
             else None,
@@ -394,7 +413,7 @@ def statement_line_from_transaction(transaction: dict[str, Any]) -> dict[str, An
     )
     line = {
         "date": when,
-        "payment_ref": _payment_ref(status_label(transaction), partner, detail),
+        "payment_ref": _payment_ref(partner, detail),
         "ref": unique_id,
         "unique_import_id": payment_unique_id(unique_id),
         "amount": _signed_amount(transaction),

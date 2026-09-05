@@ -166,6 +166,7 @@ class OnlineBankStatementProviderPayPal(models.Model):
         filtered = []
         for line in lines:
             currency_code = line.pop("currency_code", None)
+            self._assign_partner_by_email(line)
             line.pop("partner_email", None)
             if (
                 currency_code
@@ -181,6 +182,22 @@ class OnlineBankStatementProviderPayPal(models.Model):
                 continue
             filtered.append(line)
         return filtered, extras
+
+    def _assign_partner_by_email(self, line):
+        email = line.get("partner_email") or line.get("account_number") or ""
+        if email in (True, False, None):
+            return
+        email = str(email).strip()
+        if "@" not in email:
+            return
+        found = self.env["res.partner"].sudo().search(
+            [("email", "=ilike", email)], limit=2
+        )
+        if len(found) != 1:
+            return
+        line["partner_id"] = found.id
+        if not line.get("partner_name"):
+            line["partner_name"] = found.name
 
     def action_paypal_register_webhook(self):
         self.ensure_one()

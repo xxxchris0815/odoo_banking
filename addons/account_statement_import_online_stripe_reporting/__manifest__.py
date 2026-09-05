@@ -1,6 +1,6 @@
 {
     "name": "Stripe Bank Feed (Expect Magic)",
-    "version": "19.0.1.3.0",
+    "version": "19.0.1.4.0",
     "category": "Accounting",
     "summary": "Stripe balance transactions (account_statement_import_online_stripe_reporting)",
     "author": "Expect Magic",

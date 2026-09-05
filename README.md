@@ -195,6 +195,10 @@ Nutzt die Transfers API (`api-services.zen.com`), nicht die Shop-Payments-API.
    `GET /payments/v1.0/{paymentId}` (live oft ein Array).
 6. Es werden nur `SETTLED`-Zahlungen übernommen. `IN_PROGRESS` / `REJECTED`
    bleiben draußen, sonst entstehen Duplikate sobald sie settled sind.
+7. Label ist `Absender — Titel` ohne Status-Prefix wie `[paid]`. Die
+   Gegenpartei-IBAN liegt auf `account_number` (Feld `iban` oder
+   `accountNumber`). Steht sie auf `res.partner.bank`, wird der Partner
+   gesetzt. PayPal/Stripe haben keine IBAN — dort matcht die E-Mail.
 
 Ohne Transfers-API-Zugang: monatlichen CSV-Kontoauszug aus der ZEN-App
 über `account_statement_import_sheet_file` importieren.

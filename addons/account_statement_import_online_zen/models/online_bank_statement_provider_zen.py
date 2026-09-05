@@ -191,8 +191,34 @@ class OnlineBankStatementProviderZen(models.Model):
                     journal_currency.name,
                 )
                 continue
+            self._zen_assign_partner(line)
             filtered.append(line)
         return filtered
+
+    def _zen_assign_partner(self, line):
+        """Map counterparty IBAN onto res.partner.bank → partner_id."""
+        raw = line.get("account_number") or ""
+        if raw in (True, False, None):
+            return
+        acc = str(raw).replace(" ", "").upper()
+        if not acc:
+            return
+        line["account_number"] = acc
+        Bank = self.env["res.partner.bank"].sudo()
+        domain = [("acc_number", "ilike", acc)]
+        if "sanitized_acc_number" in Bank._fields:
+            domain = [
+                "|",
+                ("sanitized_acc_number", "=", acc),
+                ("acc_number", "=", acc),
+            ]
+        bank = Bank.search(domain, limit=1)
+        if not bank:
+            return
+        line["partner_id"] = bank.partner_id.id
+        line["partner_bank_id"] = bank.id
+        if not line.get("partner_name"):
+            line["partner_name"] = bank.partner_id.name
 
     def _zen_provider_for_account(self, account_id):
         """Route a notification to the wallet that owns this account UUID."""
