@@ -37,18 +37,21 @@ class OnlineBankStatementProviderJeeves(models.Model):
             return super()._obtain_statement_data(date_since, date_until)
         return self._jeeves_obtain_statement_data(date_since, date_until)
 
+    def _jeeves_journal_currency(self):
+        self.ensure_one()
+        journal = self.journal_id
+        return (journal.currency_id or journal.company_id.currency_id).name
+
     def _jeeves_client(self):
         self.ensure_one()
-        if not self.password or not self.username:
+        if not self.password:
             raise UserError(
-                self.env._(
-                    "Set the Jeeves MCP API key and the Cash account id "
-                    "on the provider."
-                )
+                self.env._("Set the Jeeves MCP API key on the provider.")
             )
         return JeevesMCPClient(
             self.password,
-            account_id=self.username,
+            account_id=self.username or "",
+            currency=self._jeeves_journal_currency(),
             mcp_url=self.api_base or JEEVES_MCP_URL,
             http_request=_requests_http,
         )
@@ -61,8 +64,7 @@ class OnlineBankStatementProviderJeeves(models.Model):
             )
         except (JeevesMCPConfigError, JeevesMCPError) as error:
             raise UserError(str(error)) from error
-        journal = self.journal_id
-        currency = (journal.currency_id or journal.company_id.currency_id).name
+        currency = self._jeeves_journal_currency()
         filtered = []
         for line in lines:
             currency_code = line.pop("currency_code", None)
@@ -75,6 +77,8 @@ class OnlineBankStatementProviderJeeves(models.Model):
                 )
                 continue
             self._jeeves_assign_partner_line(line)
+            line.pop("partner_email", None)
+            line.pop("jeeves_vendor_id", None)
             filtered.append(line)
         return filtered, extras
 
@@ -83,14 +87,41 @@ class OnlineBankStatementProviderJeeves(models.Model):
             return ""
         return str(value).strip()
 
-    def _jeeves_assign_partner_line(self, line):
-        """MCP has no vendor UUID — unique payee name, then stored vendor id."""
-        Partner = self.env["res.partner"].sudo()
-        name = self._jeeves_text(line.get("partner_name"))
-        if not name:
+    def _jeeves_remember_vendor_id(self, partner, vendor_id):
+        if not partner or not vendor_id or "jeeves_vendor_id" not in partner._fields:
             return
-        found = Partner.search([("name", "=ilike", name)], limit=2)
-        if len(found) != 1:
+        if (partner.jeeves_vendor_id or "").strip():
+            return
+        other = self.env["res.partner"].sudo().search(
+            [("jeeves_vendor_id", "=", vendor_id), ("id", "!=", partner.id)],
+            limit=1,
+        )
+        if other:
+            return
+        partner.sudo().write({"jeeves_vendor_id": vendor_id})
+
+    def _jeeves_assign_partner_line(self, line):
+        """Stored vendor id first, then unique vendor e-mail, then unique name."""
+        Partner = self.env["res.partner"].sudo()
+        vendor_id = self._jeeves_text(line.get("jeeves_vendor_id"))
+        email = self._jeeves_text(line.get("partner_email"))
+        name = self._jeeves_text(line.get("partner_name"))
+        found = Partner.browse()
+        if vendor_id and "jeeves_vendor_id" in Partner._fields:
+            found = Partner.search([("jeeves_vendor_id", "=", vendor_id)], limit=2)
+            if len(found) != 1:
+                found = Partner.browse()
+        if not found and email and "@" in email:
+            by_email = Partner.search([("email", "=ilike", email)], limit=2)
+            if len(by_email) == 1:
+                found = by_email
+                self._jeeves_remember_vendor_id(found, vendor_id)
+        if not found and name:
+            by_name = Partner.search([("name", "=ilike", name)], limit=2)
+            if len(by_name) == 1:
+                found = by_name
+                self._jeeves_remember_vendor_id(found, vendor_id)
+        if not found:
             return
         line["partner_id"] = found.id
         if not line.get("partner_name"):

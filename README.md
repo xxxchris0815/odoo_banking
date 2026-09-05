@@ -231,10 +231,14 @@ Date, Merchant, Amount). Auch `;` und europäische Zahlen (`-120,00`).
 
 Zwei Wege, nicht parallel für denselben Zeitraum:
 
-- **MCP täglich:** Provider **Jeeves**, Account-ID + MCP-API-Key. Odoo ruft
-  `list_transaction` auf `https://mcp-prod.jeev.es/mcp` auf (wie der
-  n8n-MCP-Client). `unique_import_id` = Fingerprint, MCP schickt keine
-  Unique ID. n8n darf die Zeilen nicht zusätzlich buchen.
+- **MCP täglich:** Provider **Jeeves**, MCP-API-Key (Bearer) und optional
+  Account-ID. Odoo ruft `list_transactions` auf
+  `https://mcp-prod.jeev.es/mcp` auf (wie der n8n-MCP-Client), mit
+  `startDate` / `endDate` / `productAccountIds` und Pagination. Ohne
+  Account-ID wählt `list_accounts` das aktive Cash-Konto zur
+  Journal-Währung. `unique_import_id` = `id`/`transactionId` wenn
+  vorhanden, sonst Fingerprint. n8n darf die Zeilen nicht zusätzlich
+  buchen.
 - **CSV:** Journal-Dashboard → Import OCA. `unique_import_id` = Unique ID.
 
 ## Einrichtung
@@ -251,7 +255,8 @@ Die Klick-Anleitung steht in [SETUP.md](SETUP.md). Kurz die Reihenfolge:
    nicht die Hausbank. Danach Provider am Journal.
 7. Zuerst 7 Tage an **einem** Journal pullen, Re-Pull ohne Duplikate, dann
    Historie, dann das nächste Journal.
-8. Jeeves nur per Datei-Import, nicht parallel in n8n mappen.
+8. Jeeves per MCP-Pull **oder** CSV, nicht beides für denselben Zeitraum;
+   n8n darf Jeeves-Zeilen nicht buchen.
 9. Abstimmungmodelle für Gebühren und Geldtransit.
 10. Zwei saubere Cron-Läufe, Stichprobe gegen die Portale, dann n8n-Buchung
     abschalten.

@@ -24,7 +24,8 @@
                         <field
                             name="username"
                             string="Account id"
-                            required="service == 'jeeves'"
+                            placeholder="UUID from list_accounts, or empty"
+                            help="Jeeves productAccountId (Cash EUR/USD/GBP). Leave empty to pick the active cash account that matches this journal currency."
                         />
                         <field
                             name="password"

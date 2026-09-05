@@ -177,7 +177,7 @@ Richtige Module (Apps, Filter *Apps* aus):
 | Stripe Bank Feed (Expect Magic) | `account_statement_import_online_stripe_reporting` | **19.0.1.6.0** |
 | Online Bank Statements: ZEN.COM | `account_statement_import_online_zen` | **19.0.1.13.0** |
 | Online Bank Statements: GoCardless Payments | `account_statement_import_online_gocardless_payments` | **19.0.1.12.0** |
-| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.3.0** |
+| Bank Statement Import: Jeeves CSV | `account_statement_import_jeeves` | **19.0.1.4.0** |
 
 Erscheint das PayPal-Modul nicht: Filter **Apps** in der App-Liste
 ausmachen (sonst sieht man nur `application=True`). Danach
@@ -422,20 +422,26 @@ den Eingang aus ihrem eigenen Auszug.
 
 Zwei Wege, **einen** pro Zeitraum, nicht beide (sonst Duplikate):
 
-**A) Täglicher Pull über MCP** (wie n8n `list_transaction`)
+**A) Täglicher Pull über MCP** (wie n8n `list_transactions`)
 
 1. Journal *Jeeves Cash EUR* (bzw. USD), Bank Feeds = **Online (OCA)** →
    Service **Jeeves**.
-2. **Account id** = dieselbe ID wie im n8n-Node.
-3. **MCP API key** = Key aus Jeeves *Settings → Product Settings*
-   (MCP Integration). Nicht in n8n-Notes committen.
+2. **MCP API key** = Key aus Jeeves *Settings → Product Settings*
+   (MCP Integration), per **Bearer**. Nicht in n8n-Notes committen.
+3. **Account id** = `productAccountId` der Cash-Währung (EUR/USD/GBP).
+   Leer lassen: Odoo ruft `list_accounts` und nimmt das aktive Cash-Konto
+   zur Journal-Währung.
 4. Speichern. **Pull Online Bank Statement** für ein paar Tage testen.
 5. Der OCA-Cron holt danach täglich. n8n darf diese Zeilen **nicht**
-   zusätzlich ins Journal schreiben.
+   zusätzlich ins Journal schreiben. Odoo ruft nur Lesen-Tools
+   (`list_accounts`, `list_transactions`).
 
-MCP liefert keine Unique ID. Odoo bildet `jeeves:mcp:{fingerprint}`
-aus Zeitpunkt, Betrag und Gegenpartei. Dieselbe Bewegung per CSV
-importieren erzeugt eine zweite Zeile.
+Live-`list_transactions` paginiert (max. 100/Seite) und filtert
+`settled`. Die Text-Antwort hat oft keine Unique ID — Odoo bildet dann
+`jeeves:mcp:{fingerprint}` aus Zeitpunkt, Betrag und Gegenpartei.
+Kommt `id` / `transactionId`, wird das genommen. Dieselbe Bewegung per
+CSV importieren erzeugt trotzdem eine zweite Zeile (CSV nutzt Unique ID
+ohne Prefix).
 
 **B) Datei** — Schritt 9, Bank Feeds nicht auf Online. Import OCA.
 

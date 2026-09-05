@@ -1,9 +1,14 @@
-"""Jeeves MCP ``list_transaction`` → statement lines (Odoo-independent).
+"""Jeeves MCP ``list_transactions`` → statement lines (Odoo-independent).
 
-n8n/Cursor call ``https://mcp-prod.jeev.es/mcp``. The tool returns MCP
-``content[].text`` with ``total records: N, transactions: [{…}]``.
-There is no Unique ID in that payload — we fingerprint createdAt +
-amount + party so a second daily pull does not duplicate.
+Live server: ``https://mcp-prod.jeev.es/mcp`` (Streamable HTTP, often SSE).
+Auth is ``Authorization: Bearer <key>``. Only read tools are called.
+
+``list_transactions`` needs ``startDate`` (ISO). Optional filters we send:
+``endDate``, ``productAccountIds``, ``page``, ``pageSize``,
+``transactionStatuses`` (settled), ``selectedFields`` (ids when the
+server honours them). The text payload is
+``total records: N, transactions: [{…}]``. Default rows have no Unique ID;
+then we fingerprint createdAt + amount + party.
 """
 
 from __future__ import annotations
@@ -11,14 +16,30 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 JEEVES_MCP_URL = "https://mcp-prod.jeev.es/mcp"
-LIST_TRANSACTION_TOOL = "list_transaction"
+LIST_TRANSACTIONS_TOOL = "list_transactions"
+LIST_ACCOUNTS_TOOL = "list_accounts"
+READ_ONLY_TOOLS = frozenset({LIST_TRANSACTIONS_TOOL, LIST_ACCOUNTS_TOOL})
+MCP_PROTOCOL_VERSION = "2025-03-26"
+PAGE_SIZE = 100
 SETTLED_STATUSES = frozenset({"settled", "completed", "posted", "booked"})
 WALLET_NAME_SUFFIX = " account"
+SELECTED_TRANSACTION_FIELDS = {
+    "id": True,
+    "transactionId": True,
+    "createdAt": True,
+    "source": True,
+    "destination": True,
+    "transactionType": True,
+    "transactionTypeTag": True,
+    "transactionStatus": True,
+    "transactionDate": True,
+    "amounts": True,
+}
 
 
 class JeevesMCPError(RuntimeError):
@@ -37,11 +58,23 @@ def _naive_dt(value: datetime | date | None) -> datetime | None:
     return datetime.combine(value, datetime.min.time())
 
 
-def _iso(value: datetime | date) -> str:
-    when = _naive_dt(value)
-    if when is None:
+def mcp_query_datetimes(
+    date_since: datetime | date, date_until: datetime | date
+) -> tuple[str, str]:
+    """Inclusive ISO window. OCA ``date_until`` is exclusive next midnight."""
+    start = _naive_dt(date_since)
+    until = _naive_dt(date_until)
+    if start is None or until is None:
         raise JeevesMCPConfigError("Jeeves MCP date window is missing")
-    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end = until
+    if until.time() == datetime.min.time() and until > start:
+        end = until - timedelta(seconds=1)
+    if end < start:
+        end = start
+    return (
+        start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -61,14 +94,14 @@ def _is_wallet_name(name: str) -> bool:
     return name.strip().lower().endswith(WALLET_NAME_SUFFIX)
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _party(transaction: dict[str, Any]) -> dict[str, Any]:
     direction = (transaction.get("transactionType") or "").strip().lower()
-    source = transaction.get("source") or {}
-    dest = transaction.get("destination") or {}
-    if not isinstance(source, dict):
-        source = {}
-    if not isinstance(dest, dict):
-        dest = {}
+    source = _as_dict(transaction.get("source"))
+    dest = _as_dict(transaction.get("destination"))
     if direction == "credit":
         party = source
         wallet = dest
@@ -90,6 +123,43 @@ def _party(transaction: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _vendor(transaction: dict[str, Any]) -> dict[str, str]:
+    vendor = transaction.get("vendor")
+    if not isinstance(vendor, dict):
+        vendor = {}
+    vendor_id = (
+        vendor.get("id")
+        or vendor.get("vendorId")
+        or transaction.get("vendorId")
+        or ""
+    )
+    email = (
+        vendor.get("email")
+        or vendor.get("emailAddress")
+        or transaction.get("vendorEmail")
+        or ""
+    )
+    return {
+        "jeeves_vendor_id": str(vendor_id).strip(),
+        "partner_email": str(email).strip(),
+    }
+
+
+def _base_amount(transaction: dict[str, Any]) -> float:
+    if transaction.get("totalBaseCurrencyAmount") is not None:
+        return abs(float(transaction.get("totalBaseCurrencyAmount") or 0))
+    amounts = transaction.get("amounts")
+    if isinstance(amounts, dict):
+        for key in (
+            "totalBaseCurrencyAmount",
+            "baseCurrencyAmount",
+            "amount",
+        ):
+            if amounts.get(key) is not None:
+                return abs(float(amounts[key] or 0))
+    return 0.0
+
+
 def transaction_unique_id(transaction: dict[str, Any]) -> str:
     official = (
         transaction.get("id")
@@ -103,10 +173,14 @@ def transaction_unique_id(transaction: dict[str, Any]) -> str:
     raw = "|".join(
         [
             str(transaction.get("createdAt") or ""),
-            str(transaction.get("transactionPostedDate") or ""),
+            str(
+                transaction.get("transactionPostedDate")
+                or transaction.get("postedAt")
+                or ""
+            ),
             str(transaction.get("transactionType") or ""),
             str(transaction.get("transactionTypeTag") or ""),
-            f"{float(transaction.get('totalBaseCurrencyAmount') or 0):.2f}",
+            f"{_base_amount(transaction):.2f}",
             str(party["partner_name"] or ""),
             str(party["party_detail"] or ""),
         ]
@@ -115,8 +189,7 @@ def transaction_unique_id(transaction: dict[str, Any]) -> str:
     return f"jeeves:mcp:{digest}"
 
 
-def extract_transactions_from_text(text: str) -> list[dict[str, Any]]:
-    """Parse ``total records: N, transactions: […]`` or a bare JSON array."""
+def extract_json_array(text: str) -> list[Any]:
     if not text or not str(text).strip():
         return []
     blob = str(text).strip()
@@ -127,9 +200,43 @@ def extract_transactions_from_text(text: str) -> list[dict[str, Any]]:
     if start < 0:
         return []
     payload = json.loads(blob[start:])
-    if not isinstance(payload, list):
-        return []
-    return [row for row in payload if isinstance(row, dict)]
+    return payload if isinstance(payload, list) else []
+
+
+def extract_transactions_from_text(text: str) -> list[dict[str, Any]]:
+    """Parse ``total records: N, transactions: […]`` or a bare JSON array."""
+    return [row for row in extract_json_array(text) if isinstance(row, dict)]
+
+
+def extract_total_records(text: str) -> int | None:
+    match = re.search(r"total records\s*:\s*(\d+)", str(text or ""), flags=re.I)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def iter_mcp_text(payload: Any) -> list[str]:
+    texts: list[str] = []
+    if isinstance(payload, list):
+        for item in payload:
+            texts.extend(iter_mcp_text(item))
+        return texts
+    if not isinstance(payload, dict):
+        return texts
+    result = payload.get("result")
+    if result is not None and result is not payload:
+        texts.extend(iter_mcp_text(result))
+    content = payload.get("content")
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("text") is not None:
+                texts.append(str(block.get("text") or ""))
+            else:
+                texts.extend(iter_mcp_text(block))
+    text = payload.get("text")
+    if isinstance(text, str):
+        texts.append(text)
+    return texts
 
 
 def unwrap_mcp_transactions(payload: Any) -> list[dict[str, Any]]:
@@ -173,12 +280,74 @@ def unwrap_mcp_transactions(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+def unwrap_mcp_accounts(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    for text in iter_mcp_text(payload):
+        rows = [row for row in extract_json_array(text) if isinstance(row, dict)]
+        if rows:
+            return rows
+    if isinstance(payload, dict):
+        data = payload.get("accounts") or payload.get("data")
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, dict)]
+    return []
+
+
+def mcp_total_records(payload: Any) -> int | None:
+    for text in iter_mcp_text(payload):
+        total = extract_total_records(text)
+        if total is not None:
+            return total
+    return None
+
+
+def resolve_product_account_id(
+    accounts: list[dict[str, Any]],
+    *,
+    account_id: str | None = None,
+    currency: str | None = None,
+) -> str:
+    wanted = (account_id or "").strip()
+    if wanted:
+        return wanted
+    active = [
+        row
+        for row in accounts
+        if (row.get("accountStatus") or "").strip().lower() == "active"
+        and (row.get("accountId") or "").strip()
+    ]
+    code = (currency or "").strip().upper()
+    if code:
+        matches = [
+            row
+            for row in active
+            if (row.get("currencyAlphaCode") or "").strip().upper() == code
+        ]
+        if len(matches) == 1:
+            return str(matches[0]["accountId"]).strip()
+        if not matches:
+            raise JeevesMCPConfigError(
+                f"No active Jeeves cash account in {code}"
+            )
+        raise JeevesMCPConfigError(
+            f"Multiple active Jeeves cash accounts in {code}"
+        )
+    if len(active) == 1:
+        return str(active[0]["accountId"]).strip()
+    raise JeevesMCPConfigError(
+        "Set the Jeeves Cash account id on the provider "
+        "(or leave it empty on a single-currency journal)"
+    )
+
+
 def statement_line_from_mcp_transaction(transaction: dict[str, Any]) -> dict[str, Any]:
     status = (transaction.get("transactionStatus") or "").strip().lower()
     if status and status not in SETTLED_STATUSES:
         raise ValueError(f"Jeeves MCP transaction is not settled: {status}")
     when = (
         _parse_datetime(transaction.get("transactionPostedDate"))
+        or _parse_datetime(transaction.get("postedAt"))
         or _parse_datetime(transaction.get("transactionDate"))
         or _parse_datetime(transaction.get("createdAt"))
     )
@@ -186,10 +355,11 @@ def statement_line_from_mcp_transaction(transaction: dict[str, Any]) -> dict[str
         raise ValueError("Jeeves MCP transaction has no date")
     direction = (transaction.get("transactionType") or "").strip().lower()
     tag = (transaction.get("transactionTypeTag") or "").strip()
-    amount = abs(float(transaction.get("totalBaseCurrencyAmount") or 0))
+    amount = _base_amount(transaction)
     if direction == "debit":
         amount = -amount
     party = _party(transaction)
+    vendor = _vendor(transaction)
     partner = party["partner_name"] or None
     detail = tag or party["party_detail"] or ""
     if partner and detail and partner.casefold() != detail.casefold():
@@ -220,6 +390,10 @@ def statement_line_from_mcp_transaction(transaction: dict[str, Any]) -> dict[str
     }
     if party["currency"]:
         line["currency_code"] = party["currency"]
+    if vendor["jeeves_vendor_id"]:
+        line["jeeves_vendor_id"] = vendor["jeeves_vendor_id"]
+    if vendor["partner_email"]:
+        line["partner_email"] = vendor["partner_email"]
     return line
 
 
@@ -265,37 +439,40 @@ def parse_mcp_http_body(body: str | bytes, content_type: str = "") -> Any:
 
 
 class JeevesMCPClient:
-    """Minimal Streamable-HTTP MCP client for ``list_transaction``."""
+    """Streamable-HTTP MCP client for read-only Jeeves tools."""
 
     def __init__(
         self,
         api_key: str,
         *,
-        account_id: str,
+        account_id: str | None = None,
+        currency: str | None = None,
         mcp_url: str | None = None,
         http_request: Callable[..., tuple[int, dict[str, str], str]] | None = None,
     ):
         if not api_key:
             raise JeevesMCPConfigError("Jeeves MCP API key is required")
-        if not account_id:
-            raise JeevesMCPConfigError("Jeeves MCP account id is required")
         self.api_key = api_key.strip()
         if self.api_key.lower().startswith("bearer "):
             self.api_key = self.api_key[7:].strip()
-        self.account_id = account_id.strip()
+        self.account_id = (account_id or "").strip()
+        self.currency = (currency or "").strip().upper()
         self.mcp_url = (mcp_url or JEEVES_MCP_URL).strip()
         parsed = urlparse(self.mcp_url if "://" in self.mcp_url else f"https://{self.mcp_url}")
         if not parsed.scheme:
             self.mcp_url = f"https://{self.mcp_url}"
         self._http_request = http_request
         self._session_id = ""
+        self._initialized = False
+        self.page_size = PAGE_SIZE
 
     def _headers(self) -> dict[str, str]:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
-            "MCP-Protocol-Version": "2024-11-05",
+            "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+            "User-Agent": "odoo-jeeves/19.0",
         }
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
@@ -332,9 +509,9 @@ class JeevesMCPClient:
                 "id": 1,
                 "method": "initialize",
                 "params": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": MCP_PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "odoo-jeeves", "version": "19.0.1.3"},
+                    "clientInfo": {"name": "odoo-jeeves", "version": "19.0.1.4"},
                 },
             }
         )
@@ -345,17 +522,32 @@ class JeevesMCPClient:
         except JeevesMCPError:
             # Some servers skip the notification and still accept tools/call.
             pass
+        self._initialized = True
 
-    def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        if not self._session_id:
+    def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
+        if name not in READ_ONLY_TOOLS:
+            raise JeevesMCPConfigError(f"Refusing Jeeves MCP write tool {name}")
+        if not self._initialized:
             self.initialize()
         return self._request(
             {
                 "jsonrpc": "2.0",
                 "id": 2,
                 "method": "tools/call",
-                "params": {"name": name, "arguments": arguments},
+                "params": {"name": name, "arguments": arguments or {}},
             }
+        )
+
+    def list_accounts(self) -> list[dict[str, Any]]:
+        return unwrap_mcp_accounts(self.call_tool(LIST_ACCOUNTS_TOOL, {}))
+
+    def resolve_account_id(self) -> str:
+        if self.account_id:
+            return self.account_id
+        return resolve_product_account_id(
+            self.list_accounts(),
+            account_id=self.account_id,
+            currency=self.currency,
         )
 
     def list_transactions(
@@ -363,15 +555,36 @@ class JeevesMCPClient:
         date_since: datetime | date,
         date_until: datetime | date,
     ) -> list[dict[str, Any]]:
-        payload = self.call_tool(
-            LIST_TRANSACTION_TOOL,
-            {
-                "accountId": self.account_id,
-                "start": _iso(date_since),
-                "end": _iso(date_until),
-            },
-        )
-        return unwrap_mcp_transactions(payload)
+        start, end = mcp_query_datetimes(date_since, date_until)
+        account_id = self.resolve_account_id()
+        collected: list[dict[str, Any]] = []
+        page = 1
+        total = None
+        while True:
+            payload = self.call_tool(
+                LIST_TRANSACTIONS_TOOL,
+                {
+                    "startDate": start,
+                    "endDate": end,
+                    "productAccountIds": [account_id],
+                    "page": page,
+                    "pageSize": self.page_size,
+                    "transactionStatuses": ["settled"],
+                    "selectedFields": dict(SELECTED_TRANSACTION_FIELDS),
+                },
+            )
+            rows = unwrap_mcp_transactions(payload)
+            collected.extend(rows)
+            if total is None:
+                total = mcp_total_records(payload)
+            if total is not None and len(collected) >= total:
+                break
+            if len(rows) < self.page_size:
+                break
+            page += 1
+            if page > 100:
+                raise JeevesMCPError("Jeeves MCP list_transactions exceeded 100 pages")
+        return collected
 
     def obtain_statement_lines(
         self,
